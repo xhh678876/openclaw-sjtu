@@ -1,270 +1,326 @@
 ---
 name: sjtu-canvas
 description: |
-  SJTU Canvas 课程助手。管理上海交通大学 Canvas (oc.sjtu.edu.cn) 课程数据。
+  上海交通大学全能校园助手。覆盖 Canvas 作业管理、课程评价、校园生活、学术工具等 19 项功能。
   触发场景:
-  (1) 查看/下载课程文件(PPT/PDF)、批量下载课件
-  (2) 查看作业列表、DDL、提交状态、提交作业
-  (3) 同步作业DDL到Apple日历(Mac+iPhone)
-  (4) PPT/PDF内容提取和AI总结、课件学习
-  (5) 作业辅导(提取作业要求+课件内容→给思路)
-  (6) 查看成绩、计算均分
-  (7) 课程讨论区摘要
-  (8) 视频字幕总结
-  (9) DDL预警提醒
-  (10) 期末复习包生成(所有课件→Markdown→NotebookLM)
-  (11) 一键提交作业
-  (12) 全自动作业流水线(扫描→课件RAG→生成答案→提交)
-  (13) 助教批改模式(拉取提交→提取内容→AI评分建议→批量打分)
-  触发词: Canvas, 课程, 作业, DDL, 截止, 成绩, 课件, PPT, 总结, 复习, 提交作业, 讨论区, 传热学, 机械振动, 燃烧学, 热力系统, 遗传学, 自动做作业, 批改, 打分, 助教
+  (1) 查看/追踪作业DDL、提交状态、成绩
+  (2) 下载课件、AI总结、作业辅导
+  (3) 同步DDL到Apple日历
+  (4) 查询课程评价、对比老师评分
+  (5) 查看交大邮箱未读、搜索、发邮件
+  (6) 食堂推荐、查菜单
+  (7) 查教学周、校历、校园巴士时刻
+  (8) 查图书馆、空教室
+  (9) 查正版软件、镜像换源
+  (10) 交大新闻、教务通知
+  (11) 搜索往年课程资源（传承交大）
+  (12) 查生存手册
+  (13) 生成交大PPT
+  (14) 提交作业、助教批改
+  触发词: Canvas, 课程, 作业, DDL, 截止, 成绩, 课件, PPT, 总结, 复习, 提交作业, 讨论区, 批改, 传热学, 机械振动, 燃烧学, 热力系统, 遗传学, 食堂, 吃什么, 图书馆, 教室, 空教室, 巴士, 校车, 教学周, 第几周, 校历, 放假, 清明, 五一, 邮箱, 邮件, 选课, 评价, 老师怎么样, 软件, MATLAB, Office, 镜像, pip, conda, 换源, 新闻, 教务, 通知, 传承, 往年, 试卷, 生存手册, 保研, 转专业, GPA, PPT模板, 手写
 ---
 
-# SJTU Canvas 课程助手
+# 上海交通大学全能校园助手
 
 ## 配置
 
-- Token 和设置: `skills/sjtu-canvas/config.json`
-- Canvas 基础 URL: `https://oc.sjtu.edu.cn`
-- 用户 ID: 415063 (谢豪辉)
+- 配置文件: `skills/sjtu-canvas/config.json`
+- Canvas URL: `https://oc.sjtu.edu.cn`
+- 用户: 谢豪辉 (ID: 415063)
+- 所有脚本位于 `skills/sjtu-canvas/scripts/`，用 `python3` 执行
+- PPT 生成器位于 `skills/sjtu-ppt/scripts/generate_ppt.py`
+- PPT 模板位于 `skills/sjtu-ppt/templates/`
 
-## 当前课程 (2025-2026 学期)
+## 当前课程 (2025-2026 春季学期)
 
-| ID | 课程名 |
-|---|---|
-| 87891 | 传热学 |
-| 87838 | 机械振动学 |
-| 87905 | 燃烧学 |
-| 87878 | 热力系统设计与实践 |
-| 86731 | 遗传学与社会 |
+| ID | 课程名 | 老师 | 教室 |
+|---|---|---|---|
+| 87891 | 传热学 | 徐治国 | 东上院206 |
+| 87838 | 机械振动学 | 吴海军 | 下院307 |
+| 87905 | 燃烧学 | 林赫 | 东下院408 |
+| 87878 | 热力系统设计与实践 | 韩东 | 东下院313 |
+| 86731 | 遗传学与社会 | 付力文 | 东下院203 |
 
-## 核心脚本
+---
 
-所有脚本位于 `skills/sjtu-canvas/scripts/`，用 python3 执行。
+## 🔴 刚需功能（每周都用）
 
-### canvas_api.py — Canvas API 交互
+### 1. DDL 追踪
+
+**触发**: "我有什么作业"、"DDL"、"截止"、"未交作业"
 
 ```bash
-# 列出课程
-python3 scripts/canvas_api.py courses
-
-# 查看所有未来DDL
+# 查看未交作业 + 倒计时
 python3 scripts/canvas_api.py ddls
 
-# 查看已出成绩
+# 本学期全景（全部DDL + 状态 + 老师反馈 + 迟交记录）
+python3 scripts/canvas_api.py ddls-all
+```
+
+### 2. DDL → Apple 日历
+
+**触发**: "同步日历"、"导出DDL"、"导入日历"
+
+```bash
+# 导出 ICS 文件
+python3 scripts/sjtu_timetable_ics.py ddls ~/Desktop/ddls.ics
+# 然后双击 .ics 即可导入 Apple 日历
+
+# 直接同步到 Apple 日历（macOS）
+python3 scripts/calendar_sync.py
+```
+
+### 3. 教学周 / 校历
+
+**触发**: "今天第几周"、"教学周"、"校历"、"什么时候放假"、"清明"、"五一"
+
+```bash
+python3 scripts/sjtu_info.py week      # 当前第几周 + 近期事件
+python3 scripts/sjtu_info.py calendar  # 完整学期校历
+```
+
+### 4. 教务通知
+
+**触发**: "教务通知"、"教务处"、"选课通知"、"考试安排"
+
+```bash
+python3 scripts/sjtu_news.py jwc 10   # 教务处最新通知（含摘要）
+```
+
+---
+
+## 🟠 高频功能（每月多次）
+
+### 5. 课程评价 ⚠️
+
+**触发**: "课程评价"、"老师怎么样"、"选课参考"、"评分"
+
+> ⚠️ course.sjtu.plus 有 CDN 反爬，Python 脚本需要 cookie。
+> **推荐方式**：通过浏览器代理调用 API（已登录 xhh666）。
+
+浏览器代理调用方式（在 OpenClaw browser 中执行）：
+```javascript
+// 搜索课程
+fetch('/api/search/?q=传热学&page_size=10', {credentials:'same-origin'}).then(r=>r.json())
+
+// 课程详情 + 老师对比
+fetch('/api/course/8158/', {credentials:'same-origin'}).then(r=>r.json())
+```
+
+浏览器必须先打开 course.sjtu.plus 并保持登录状态。
+如果 session 过期，导航到 course.sjtu.plus/login，邮箱密码登录 tab 填入 xhh666 / xhhxhh66666 点击登录。
+
+脚本方式（备用，需 cookie）：
+```bash
+python3 scripts/sjtu_course_review.py search 传热学
+python3 scripts/sjtu_course_review.py compare 燃烧学
+python3 scripts/sjtu_course_review.py detail 8158
+```
+
+### 6. 交大邮箱
+
+**触发**: "邮箱"、"邮件"、"未读"、"发邮件"
+
+```bash
+python3 scripts/sjtu_mail.py unread --limit 10    # 未读邮件
+python3 scripts/sjtu_mail.py search -k "作业"     # 搜索
+python3 scripts/sjtu_mail.py summary              # 邮箱概况
+python3 scripts/sjtu_mail.py send --to X --subject Y --body Z  # 发送
+```
+
+凭证从 config.json 自动读取（sjtu_username / sjtu_password）。
+
+### 7. 食堂推荐
+
+**触发**: "吃什么"、"食堂"、"推荐"、"菜单"、"哪个食堂"
+
+```bash
+python3 scripts/sjtu_canteen.py recommend   # 按当前时段智能推荐
+python3 scripts/sjtu_canteen.py list        # 所有食堂信息
+python3 scripts/sjtu_canteen.py menu 二餐   # 指定食堂菜单
+```
+
+### 8. 传承交大（课程资源）
+
+**触发**: "往年试卷"、"课程资源"、"传承"、"笔记"
+
+```bash
+python3 scripts/sjtu_legacy.py search "传热学"  # 搜索课程资源
+python3 scripts/sjtu_legacy.py popular          # 热门课程资源
+```
+
+### 9. 交大新闻
+
+**触发**: "交大新闻"、"学校新闻"、"最近发生什么"
+
+```bash
+python3 scripts/sjtu_news.py news 10   # 交大新闻网
+python3 scripts/sjtu_news.py all       # 新闻 + 教务 + 信息公开
+```
+
+---
+
+## 🟡 实用功能（需要时用）
+
+### 10. 图书馆
+
+**触发**: "图书馆"、"开馆时间"、"座位"
+
+```bash
+python3 scripts/sjtu_library.py info    # 5馆信息 + 开放时间 + 楼层
+python3 scripts/sjtu_library.py seats   # 座位预约信息
+```
+
+### 11. 空教室
+
+**触发**: "空教室"、"哪里有教室"、"自习"
+
+```bash
+python3 scripts/sjtu_classroom.py empty                  # 所有教学楼
+python3 scripts/sjtu_classroom.py empty --building 东上院  # 指定教学楼
+python3 scripts/sjtu_classroom.py info --building 东上院   # 教学楼详情
+```
+
+### 12. 交大 PPT
+
+**触发**: "做PPT"、"PPT模板"、"生成PPT"、"交大模板"
+
+```bash
+# 列出模板
+python3 skills/sjtu-ppt/scripts/generate_ppt.py --list-templates
+
+# 生成 PPT（先写 markdown 文件，再传入）
+python3 skills/sjtu-ppt/scripts/generate_ppt.py \
+  --title "标题" \
+  --markdown content.md \
+  --template "0.上海交通大学通用PPT模板.pptx" \
+  --output output.pptx
+```
+
+模板目录: `skills/sjtu-ppt/templates/`（9 套）
+
+### 13. 正版软件
+
+**触发**: "正版软件"、"MATLAB"、"Office"、"免费软件"
+
+```bash
+python3 scripts/sjtu_software.py list             # 列出所有（13款）
+python3 scripts/sjtu_software.py search "MATLAB"  # 搜索
+```
+
+### 14. 校园巴士
+
+**触发**: "校车"、"巴士"、"去徐汇"、"闵行到徐汇"
+
+```bash
+python3 scripts/sjtu_info.py bus   # 闵行↔徐汇时刻表
+```
+
+### 15. 生存手册
+
+**触发**: "生存手册"、"保研"、"考研"、"转专业"、"GPA"
+
+```bash
+python3 scripts/sjtu_survive.py toc              # 目录
+python3 scripts/sjtu_survive.py search "保研"     # 搜索
+python3 scripts/sjtu_survive.py read "GPA"        # 阅读章节
+```
+
+---
+
+## 🟢 工具功能
+
+### 16. 镜像换源
+
+**触发**: "换源"、"pip源"、"镜像"、"conda源"
+
+```bash
+python3 scripts/sjtu_mirror.py pip      # pip 换源
+python3 scripts/sjtu_mirror.py conda    # conda 换源
+python3 scripts/sjtu_mirror.py brew     # Homebrew 换源
+python3 scripts/sjtu_mirror.py docker   # Docker 换源
+python3 scripts/sjtu_mirror.py npm      # npm 换源
+python3 scripts/sjtu_mirror.py list     # 所有可用镜像
+```
+
+### 17. 在线工具
+
+**触发**: "LaTeX"、"在线工具"、"OCR"、"TTS"
+
+```bash
+python3 scripts/sjtu_tools.py list   # 列出所有工具（9个）
+```
+
+### 18. 视觉交大
+
+**触发**: "校园照片"、"校园风景"
+
+```bash
+python3 scripts/sjtu_visual.py albums          # 相册列表
+python3 scripts/sjtu_visual.py search "图书馆"  # 搜索照片
+```
+
+---
+
+## 📚 Canvas 高级功能
+
+### 课件下载 + AI 总结
+
+```bash
+python3 scripts/canvas_api.py courses              # 列出课程
+python3 scripts/canvas_api.py files <course_id>     # 课程文件列表
+python3 scripts/canvas_api.py download <cid> <name> # 下载课件
+```
+
+下载后用 `file_extractor.py` 提取文本：
+```bash
+python3 scripts/file_extractor.py path/to/file.pptx
+```
+
+### 成绩查询
+
+```bash
 python3 scripts/canvas_api.py grades
 ```
 
-Python 中调用:
+### 提交作业
+
+⚠️ **提交前必须向用户确认课程、作业和文件**
+
 ```python
-import sys; sys.path.insert(0, "skills/sjtu-canvas/scripts")
-from canvas_api import *
-
-list_courses()                          # 课程列表
-list_assignments(course_id)             # 作业列表
-get_all_upcoming_ddls()                 # 所有未来DDL
-get_course_grades(course_id)            # 成绩
-list_course_files(course_id)            # 课程文件
-download_course_files(cid, name, dir)   # 批量下载
-list_discussions(course_id)             # 讨论区
-get_full_discussion(cid, topic_id)      # 讨论详情
-submit_assignment(cid, aid, [paths])    # 提交作业
+from canvas_api import submit_assignment
+submit_assignment(course_id, assignment_id, [file_paths])
 ```
 
-### file_extractor.py — 课件内容提取
+### 全自动作业流水线
 
 ```bash
-# 提取单个文件
-python3 scripts/file_extractor.py path/to/file.pptx
-
-# 批量提取目录 → Markdown
-python3 scripts/file_extractor.py ~/Downloads/Canvas课件/传热学 ~/Downloads/Canvas课件/传热学_md
+python3 scripts/auto_homework.py scan               # 扫描未提交
+python3 scripts/auto_homework.py urgent 24           # 24h内到期
+python3 scripts/auto_homework.py context <cid> <aid> # 构建作业上下文
 ```
 
-支持格式: `.pptx` `.pdf` `.docx` `.txt` `.md`
-
-### calendar_sync.py — DDL → Apple 日历
+### 手写 PDF 生成
 
 ```bash
-cd skills/sjtu-canvas && python3 scripts/calendar_sync.py
-```
-
-自动创建「Canvas作业」日历分类，已存在的事件不会重复创建。通过 iCloud 同步到 iPhone。
-
-### auto_homework.py — 全自动作业流水线 🆕
-
-```bash
-# 扫描所有未提交作业（按紧急程度排序）
-python3 scripts/auto_homework.py scan
-
-# 查看 N 小时内到期的紧急作业
-python3 scripts/auto_homework.py urgent 24
-
-# 检测新增作业（与上次巡检对比，适合 cron）
-python3 scripts/auto_homework.py watch
-
-# 为指定作业构建完整上下文（下载课件 + 提取内容 + 生成 AI prompt）
-python3 scripts/auto_homework.py context <course_id> <assignment_id>
-
-# 完整流水线（构建上下文 + 准备提交）
-python3 scripts/auto_homework.py full <course_id> <assignment_id>
-```
-
-Python 中调用:
-```python
-from auto_homework import *
-
-scan_unsubmitted()                              # 扫描未提交作业列表
-get_urgent_assignments(hours=48)                # 紧急作业
-check_new_assignments()                         # 新作业检测（有状态）
-build_homework_context(course_id, assignment_id) # 构建作业上下文
-get_assignment_detail(course_id, assignment_id)  # 作业详情（含图片解析）
-```
-
-**全自动作业流水线工作流：**
-1. `scan` 扫描未提交作业
-2. `context` 自动下载相关课件 → 提取内容 → 解析题目图片 → 生成 AI prompt
-3. Agent 读取 prompt 文件 + 课件上下文，生成解答
-4. 用户确认后 → `submit_assignment()` 提交
-5. 可设置 `watch` 配合 cron 自动巡检新作业
-
-### grading_assistant.py — 助教批改助手 🆕
-
-```bash
-# 查看作业的所有学生提交
-python3 scripts/grading_assistant.py submissions <course_id> <assignment_id>
-
-# 下载所有学生提交的文件
-python3 scripts/grading_assistant.py download <course_id> <assignment_id>
-
-# 生成批改上下文（下载 + 提取 + AI prompt）
-python3 scripts/grading_assistant.py context <course_id> <assignment_id>
-
-# 给学生打分（需要助教/教师权限）
-python3 scripts/grading_assistant.py grade <cid> <aid> <user_id> <score> [comment]
-```
-
-Python 中调用:
-```python
-from grading_assistant import *
-
-list_submissions(course_id, assignment_id)          # 提交列表
-download_submission_files(course_id, assignment_id)  # 下载所有提交
-build_grading_context(course_id, assignment_id)      # 构建批改上下文
-grade_submission(cid, aid, user_id, score, comment)  # 单个打分
-batch_grade(cid, aid, grades_list)                   # 批量打分
-```
-
-**助教批改工作流：**
-1. `submissions` 查看提交列表和状态
-2. `context` 自动下载所有提交 → 提取内容 → 生成批改 prompt
-3. Agent 读取 prompt 文件，根据作业要求和提交内容生成评分建议
-4. 助教审阅确认后 → `grade` 或 `batch_grade` 批量打分
-
-> ⚠️ 打分功能需要助教/教师权限的 Canvas Token，学生 Token 无法使用。
-
-## 工作流
-
-### 1. 课件下载 + 总结
-
-1. 用 `canvas_api.download_course_files()` 下载指定课程的 PPT/PDF
-2. 用 `file_extractor.extract_file()` 提取文本内容
-3. 直接在对话中总结要点（小灰灰作为LLM）
-
-### 2. 作业辅导
-
-1. 用 `canvas_api.get_assignment()` 获取作业详情和要求
-2. 如果作业描述包含图片（题目截图），下载图片并用 `Read` 工具识别题目内容
-3. 用 `canvas_api.list_course_files()` 找到相关课件
-4. 下载并提取课件内容
-5. 结合作业要求和课件内容，给出完整解题思路
-6. **必须用 `feishu_create_doc` 生成飞书云文档**，标题格式：`📝 {课程名}{作业名} 解题思路`
-   - 使用 Lark-flavored Markdown，包含公式（LaTeX `$$` 块级 / `<equation>` 行内）、表格、callout 高亮框
-   - 文档结构：题意概述 → 分步解题 → 最终结果
-7. 将文档链接发送给用户
-
-### 3. DDL 管理
-
-1. 用 `canvas_api.get_all_upcoming_ddls()` 获取所有未来DDL
-2. 用 `calendar_sync.sync_ddls()` 同步到 Apple 日历
-3. 可设置 cron 定时巡检
-
-### 4. 成绩追踪
-
-1. 用 `canvas_api.get_course_grades()` 获取各科成绩
-2. 计算加权均分
-
-### 5. 期末复习包
-
-1. 用 `canvas_api.download_course_files()` 下载全部课件
-2. 用 `file_extractor.batch_extract()` 批量提取为 Markdown
-3. 将 Markdown 文件上传到 NotebookLM
-
-### 6. 提交作业
-
-1. 确认课程 ID 和作业 ID
-2. 确认要提交的本地文件路径
-3. 调用 `canvas_api.submit_assignment()` 提交
-4. **提交前必须向用户确认**
-
-### 7. DDL 预警 (cron)
-
-设置 cron 定时任务，每天检查 24h 内到期的作业，通过飞书通知。
-
-### 8. 全自动作业流水线 🆕
-
-1. cron 定时执行 `auto_homework.py watch` 检测新作业
-2. 发现新作业 → 自动执行 `context` 构建上下文
-3. AI Agent 读取上下文 + 课件 → 生成解答
-4. 推送给用户审阅 → 确认后自动提交
-5. 支持 `urgent` 模式，优先处理即将到期的作业
-
-### 9. 助教批改 🆕
-
-1. 用 `grading_assistant.py submissions` 查看学生提交
-2. 用 `context` 自动下载 + 提取所有提交内容
-3. AI 根据作业要求生成评分建议和评语
-4. 助教审阅后用 `batch_grade` 批量打分
-5. 需要助教权限 Token
-
-### handwrite_pdf.py — 手写风格 PDF 生成器 🆕
-
-```bash
-# 从文本文件生成手写 PDF
 python3 scripts/handwrite_pdf.py input.txt output.pdf --style casual
-
-# 直接传入文本
-python3 scripts/handwrite_pdf.py --text "解题过程..." output.pdf
-
-# 三种风格: neat(工整) casual(随意) messy(潦草)
-python3 scripts/handwrite_pdf.py input.txt output.pdf --style neat
-
-# 添加信纸横线
-python3 scripts/handwrite_pdf.py input.txt output.pdf --ruled
+# 风格: neat(工整) casual(随意) messy(潦草)
 ```
 
-Python 中调用:
-```python
-from handwrite_pdf import text_to_handwrite_pdf
+字体目录: `skills/sjtu-canvas/fonts/`（12 款手写字体）
 
-text_to_handwrite_pdf("解题内容...", "output.pdf", style="casual", ruled=False)
-```
-
-**手写作业完整工作流：**
-1. `auto_homework.py context` 获取作业要求和课件上下文
-2. AI Agent 生成解答文本
-3. `handwrite_pdf.py` 将解答渲染为手写风格 PDF
-4. 用户确认后 → `submit_assignment()` 提交
+---
 
 ## 依赖
 
 ```bash
-pip3 install python-pptx pdfplumber requests handright Pillow reportlab
+pip3 install requests beautifulsoup4 python-pptx pdfplumber handright Pillow reportlab
 ```
 
 ## 注意事项
 
-- 提交作业前**必须**向用户确认课程、作业和文件
-- Canvas Token 有效期可能有限，失效时需重新生成
-- Apple 日历操作需要 macOS 授权终端访问日历权限
-- 助教批改功能需要助教/教师角色的 Token
-- 全自动作业流水线生成的答案**必须**经用户审阅后才能提交
+1. **提交作业**前必须向用户确认
+2. Canvas Token 失效时需重新生成（oc.sjtu.edu.cn → 设置 → 新建访问许可证）
+3. 选课社区通过浏览器代理调用（CDN 反爬限制）
+4. 食堂、教室等部分数据为硬编码，如有变动需更新脚本
+5. 校园巴士时刻表以学校最新通知为准
