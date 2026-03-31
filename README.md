@@ -119,12 +119,7 @@ Canvas 是核心功能的基础，**必须配置**。
 }
 ```
 
-**验证是否成功：**
-```bash
-python3 scripts/canvas_api.py ddls
-# 如果看到作业列表，说明配置成功 ✅
-# 如果报 401 错误，说明 Token 无效，重新生成
-```
+**验证是否成功：** 直接对 AI 说「我有什么作业没交」，看到作业列表就说明配置成功 ✅
 
 > ⚠️ Token 没有过期时间，但你可以随时在设置页面删除并重新生成。
 
@@ -144,11 +139,7 @@ python3 scripts/canvas_api.py ddls
 }
 ```
 
-**验证是否成功：**
-```bash
-python3 scripts/sjtu_mail.py summary
-# 看到邮箱概况说明配置成功 ✅
-```
+**验证是否成功：** 对 AI 说「有没有新邮件」，看到邮件列表就说明配置成功 ✅
 
 > 💡 **安全建议：** 如果学校支持应用专用密码，建议使用应用专用密码而非主密码。
 >
@@ -183,11 +174,7 @@ python3 scripts/sjtu_mail.py summary
 }
 ```
 
-**验证是否成功：**
-```bash
-python3 scripts/sjtu_course_review.py search 高等数学
-# 看到课程评分说明配置成功 ✅
-```
+**验证是否成功：** 对 AI 说「帮我查高等数学的课程评价」，看到评分就说明配置成功 ✅
 
 > ⚠️ Cookie 有时效性，过期后需重新获取。如果查询失败，重新登录并更新 Cookie。
 
@@ -229,11 +216,7 @@ node scripts/shuiyuan_discourse.mjs auth finish --payload "你复制的payload"
 }
 ```
 
-**验证是否成功：**
-```bash
-node scripts/shuiyuan_discourse.mjs search "选课"
-# 看到搜索结果说明配置成功 ✅
-```
+**验证是否成功：** 对 AI 说「搜一下水源上关于选课的讨论」，看到帖子就说明配置成功 ✅
 
 ---
 
@@ -259,103 +242,65 @@ node scripts/shuiyuan_discourse.mjs search "选课"
 
 ---
 
-## 📖 使用指南
+## 📖 怎么用？直接跟 AI 聊天就行
 
-### 📋 DDL 追踪
+> 安装配置好之后，**不需要记任何命令**。直接用自然语言和你的龙虾对话，它会自动调用对应的功能。
 
-```bash
-# 查看未交作业 + 倒计时
-python3 scripts/canvas_api.py ddls
+### 📋 作业 & 成绩
 
-# 本学期全景报告
-python3 scripts/canvas_api.py ddls-all
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "我有什么作业没交？" | 查询所有未提交作业 + 截止倒计时 |
+| "这学期作业情况怎么样？" | 生成全景报告：已交/未交/迟交/老师反馈 |
+| "帮我把 DDL 同步到日历" | 导出 ICS 文件，导入 Apple / Google 日历 |
+| "我成绩怎么样？" | 查询各科成绩 |
+| "帮我下载传热学课件" | 下载课程文件到本地 |
 
-# 导出到日历（双击 .ics 导入 Apple 日历）
-python3 scripts/sjtu_timetable_ics.py ddls ~/Desktop/ddls.ics
-```
+### ⭐ 选课 & 评价
 
-### ⭐ 课程评价
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "帮我查一下高等数学的评价" | 搜索课程评分 |
+| "线性代数哪个老师好？" | 不同老师评分对比 |
+| "这门课给分怎么样？" | 查看详细评价和评分分布 |
 
-> ⚠️ course.sjtu.plus 有 CDN 反爬机制，推荐通过 OpenClaw 浏览器代理模式使用。
+### 📧 邮箱
 
-```bash
-python3 scripts/sjtu_course_review.py search 传热学
-python3 scripts/sjtu_course_review.py compare 燃烧学
-python3 scripts/sjtu_course_review.py detail <course_id>
-```
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "有没有新邮件？" | 查看未读邮件 |
+| "搜一下期末考试相关的邮件" | 关键词搜索邮件 |
+| "帮我发封邮件给 xxx" | 撰写并发送邮件 |
 
-### 📧 交大邮箱
+### 🍽️ 校园生活
 
-```bash
-python3 scripts/sjtu_mail.py unread --limit 10
-python3 scripts/sjtu_mail.py search -k "期末"
-python3 scripts/sjtu_mail.py send --to someone@sjtu.edu.cn --subject "标题" --body "正文"
-```
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "今天吃什么？" | 根据当前时段推荐食堂和菜品 |
+| "二餐有什么好吃的？" | 查指定食堂菜单 |
+| "图书馆几点关门？" | 查各馆开放时间和座位 |
+| "东上院有空教室吗？" | 查指定教学楼教室列表 |
+| "校车几点发？" | 闵行 ↔ 徐汇巴士时刻表 |
 
-### 🍽️ 食堂推荐
+### 📚 学习资源
 
-```bash
-python3 scripts/sjtu_canteen.py recommend   # 按时段智能推荐
-python3 scripts/sjtu_canteen.py list        # 所有食堂信息
-python3 scripts/sjtu_canteen.py menu 二餐   # 指定食堂菜单
-```
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "有没有高数往年试卷？" | 搜索传承交大课程资源 |
+| "搜一下保研相关的" | 搜索《上海交通大学生存手册》 |
+| "交大有什么免费软件？" | 列出 13 款正版软件 |
+| "帮我查一下教务通知" | 拉取最新教务处通知 |
+| "最近交大有什么新闻？" | 爬取交大新闻网 |
 
-### 🎨 PPT 生成
+### 🎨 工具
 
-```bash
-python3 scripts/generate_ppt.py --list-templates
-python3 scripts/generate_ppt.py \
-  --title "我的报告" \
-  --markdown content.md \
-  --template "0.上海交通大学通用PPT模板.pptx" \
-  --output report.pptx
-```
-
-### 🪞 镜像换源
-
-```bash
-python3 scripts/sjtu_mirror.py pip      # pip
-python3 scripts/sjtu_mirror.py conda    # conda
-python3 scripts/sjtu_mirror.py brew     # Homebrew
-python3 scripts/sjtu_mirror.py docker   # Docker
-python3 scripts/sjtu_mirror.py npm      # npm
-```
-
-### 📚 更多功能
-
-```bash
-# 校园信息
-python3 scripts/sjtu_info.py week           # 当前教学周
-python3 scripts/sjtu_info.py bus            # 校园巴士时刻
-python3 scripts/sjtu_info.py calendar       # 学期校历
-
-# 图书馆 & 教室
-python3 scripts/sjtu_library.py info
-python3 scripts/sjtu_classroom.py empty --building 东上院
-
-# 正版软件
-python3 scripts/sjtu_software.py list
-python3 scripts/sjtu_software.py search MATLAB
-
-# 新闻 & 通知
-python3 scripts/sjtu_news.py news 10        # 交大新闻
-python3 scripts/sjtu_news.py jwc 10         # 教务通知
-
-# 传承交大
-python3 scripts/sjtu_legacy.py search "传热学"
-python3 scripts/sjtu_legacy.py popular
-
-# 生存手册
-python3 scripts/sjtu_survive.py search "保研"
-python3 scripts/sjtu_survive.py read "GPA"
-
-# 在线工具
-python3 scripts/sjtu_tools.py list
-
-# 水源社区
-node scripts/shuiyuan_discourse.mjs search "选课"
-node scripts/shuiyuan_discourse.mjs topic <topic_id>
-```
+| 你说 | AI 帮你做 |
+|------|-----------|
+| "帮我做个 PPT" | 用交大官方模板生成 PPT |
+| "帮我把 pip 换成交大源" | 一键切换 SJTUG 镜像 |
+| "今天第几周？" | 查当前教学周 + 近期事件 |
+| "搜一下水源上关于选课的讨论" | 搜索水源社区帖子 |
+| "什么时候放假？" | 查完整学期校历 |
 
 ---
 
