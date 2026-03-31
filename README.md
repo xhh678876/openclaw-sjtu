@@ -78,20 +78,175 @@ pip install requests beautifulsoup4 python-pptx pdfplumber handright Pillow repo
 
 ### 2. 配置
 
+**一键配置（推荐）：**
+
 ```bash
 cd ~/.openclaw/workspace/skills/openclaw-sjtu
 python3 scripts/setup.py
 ```
 
-交互式配置向导会引导你逐步设置所有服务凭证（Canvas / 邮箱 / 选课社区 / 水源社区），自动测试连接，生成 `config.json`。
+交互式向导会逐步引导你完成所有配置，自动测试连接。也可手动编辑 `config.json`，详见下方各服务认证指南。
 
-> 也可以手动复制 `cp config.example.json config.json` 后编辑。
+---
+
+## 🔑 认证配置详解
+
+> 不是所有服务都必须配置。**只有 Canvas Token 是必填项**，其余按需开启。
+
+### 📋 Canvas LMS（必填 · DDL / 成绩 / 课件）
+
+Canvas 是核心功能的基础，**必须配置**。
+
+**Step 1：** 打开浏览器，登录 [oc.sjtu.edu.cn](https://oc.sjtu.edu.cn)
+
+**Step 2：** 点击左侧边栏最底部的「设置」（或直接访问 `oc.sjtu.edu.cn/profile/settings`）
+
+**Step 3：** 滚动到页面底部，找到「已批准的访问许可」区域
+
+**Step 4：** 点击「+ 新建访问许可证」
+
+**Step 5：** 在弹窗中：
+- 用途填写 `openclaw-sjtu`（随意，仅供你自己辨认）
+- 点击「生成令牌」
+
+**Step 6：** **立即复制**生成的 Token（关闭弹窗后将无法再次查看）
+
+**Step 7：** 填入配置：
+```json
+{
+  "canvas_token": "你复制的Token",
+  "base_url": "https://oc.sjtu.edu.cn"
+}
+```
+
+**验证是否成功：**
+```bash
+python3 scripts/canvas_api.py ddls
+# 如果看到作业列表，说明配置成功 ✅
+# 如果报 401 错误，说明 Token 无效，重新生成
+```
+
+> ⚠️ Token 没有过期时间，但你可以随时在设置页面删除并重新生成。
+
+---
+
+### 📧 交大邮箱（可选 · 收发邮件）
+
+用于查看未读邮件、搜索邮件、发送邮件。通过 IMAP/SMTP 协议直连 `mail.sjtu.edu.cn`。
+
+**Step 1：** 确认你的 jAccount 用户名（登录 jaccount.sjtu.edu.cn 时用的那个，不含 @sjtu.edu.cn）
+
+**Step 2：** 填入配置：
+```json
+{
+  "sjtu_username": "你的jAccount用户名",
+  "sjtu_password": "你的jAccount密码"
+}
+```
+
+**验证是否成功：**
+```bash
+python3 scripts/sjtu_mail.py summary
+# 看到邮箱概况说明配置成功 ✅
+```
+
+> 💡 **安全建议：** 如果学校支持应用专用密码，建议使用应用专用密码而非主密码。
 >
-> **各服务凭证获取方式：**
-> - **Canvas Token**：登录 [oc.sjtu.edu.cn](https://oc.sjtu.edu.cn) → 左下角「设置」→「新建访问许可证」→ 复制 Token
-> - **jAccount**：用于交大邮箱（IMAP/SMTP），建议使用应用专用密码
-> - **选课社区 Cookie**：通过浏览器登录 [course.sjtu.plus](https://course.sjtu.plus) 后导出 cookie
-> - **水源社区 API Key**：运行 `node scripts/shuiyuan_discourse.mjs auth init` 按提示授权
+> ⚠️ `config.json` 已在 `.gitignore` 中，不会被提交到 Git。但请确保不要手动上传。
+
+---
+
+### ⭐ 选课社区（可选 · 课程评价）
+
+[course.sjtu.plus](https://course.sjtu.plus) 提供课程评价和老师对比功能。由于 CDN 反爬机制，**推荐两种方式**：
+
+#### 方式 A：通过 OpenClaw 浏览器代理（推荐，零配置）
+
+如果你的 OpenClaw 配置了浏览器代理，直接对 AI 说「帮我查传热学的课程评价」即可，AI 会自动通过浏览器完成登录和查询，**无需任何配置**。
+
+#### 方式 B：手动填入 Cookie
+
+**Step 1：** 打开浏览器，登录 [course.sjtu.plus](https://course.sjtu.plus)（使用 jAccount）
+
+**Step 2：** 登录成功后，按 `F12` 打开开发者工具
+
+**Step 3：** 切换到「Network」（网络）选项卡
+
+**Step 4：** 刷新页面，点击任意一个请求
+
+**Step 5：** 在「Request Headers」中找到 `Cookie` 字段，复制完整内容
+
+**Step 6：** 填入配置：
+```json
+{
+  "course_sjtu_cookie": "你复制的完整Cookie字符串"
+}
+```
+
+**验证是否成功：**
+```bash
+python3 scripts/sjtu_course_review.py search 高等数学
+# 看到课程评分说明配置成功 ✅
+```
+
+> ⚠️ Cookie 有时效性，过期后需重新获取。如果查询失败，重新登录并更新 Cookie。
+
+---
+
+### 💧 水源社区（可选 · 论坛搜索）
+
+[水源社区](https://shuiyuan.sjtu.edu.cn) 是交大学生的 Discourse 论坛。配置后可搜索和浏览帖子。
+
+**前置条件：** 需要 Node.js v18+（`node --version` 检查）
+
+#### 方式 A：交互式授权（推荐）
+
+**Step 1：** 运行授权初始化
+```bash
+node scripts/shuiyuan_discourse.mjs auth init
+```
+
+**Step 2：** 脚本会输出一个授权链接，在浏览器中打开
+
+**Step 3：** 在水源社区页面完成授权确认
+
+**Step 4：** 页面会显示一段加密字符串（payload），复制它
+
+**Step 5：** 回到终端，运行：
+```bash
+node scripts/shuiyuan_discourse.mjs auth finish --payload "你复制的payload"
+```
+
+授权完成后，凭证自动保存到 `~/.openclaw/skills-data/shuiyuan-discourse/auth.json`。
+
+#### 方式 B：手动配置
+
+如果你已有 API Key，直接填入 `config.json`：
+```json
+{
+  "shuiyuan_user_api_key": "你的User API Key",
+  "shuiyuan_user_api_client_id": "你的Client ID"
+}
+```
+
+**验证是否成功：**
+```bash
+node scripts/shuiyuan_discourse.mjs search "选课"
+# 看到搜索结果说明配置成功 ✅
+```
+
+---
+
+### 🔒 安全须知
+
+| 注意事项 | 说明 |
+|----------|------|
+| `config.json` 不会被提交 | 已在 `.gitignore` 中排除 |
+| 密码明文存储 | 目前 config.json 中密码为明文，请勿将文件分享给他人 |
+| Token 可随时吊销 | Canvas Token 可在设置页面删除；水源授权可在社区设置中撤销 |
+| 最小权限原则 | 只配置你需要的服务，不用的留空即可 |
+
+---
 
 ### 3. 开始使用
 
