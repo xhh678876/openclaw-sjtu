@@ -10,7 +10,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey.svg)]()
 
-覆盖作业追踪、课程评价、校园生活、学术工具等 **20 项功能**，专为交大本科生打造。
+覆盖作业追踪、课程评价、校园生活、学术工具等 **20 项功能**，专为交大学子打造。
 
 </div>
 
