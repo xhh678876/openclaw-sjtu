@@ -80,10 +80,13 @@ pip install requests beautifulsoup4 python-pptx pdfplumber handright Pillow repo
 
 ```bash
 cd ~/.openclaw/workspace/skills/openclaw-sjtu
-cp config.example.json config.json
-# 编辑 config.json，填入你的凭证
+python3 scripts/setup.py
 ```
 
+交互式配置向导会引导你逐步设置所有服务凭证（Canvas / 邮箱 / 选课社区 / 水源社区），自动测试连接，生成 `config.json`。
+
+> 也可以手动复制 `cp config.example.json config.json` 后编辑。
+>
 > **各服务凭证获取方式：**
 > - **Canvas Token**：登录 [oc.sjtu.edu.cn](https://oc.sjtu.edu.cn) → 左下角「设置」→「新建访问许可证」→ 复制 Token
 > - **jAccount**：用于交大邮箱（IMAP/SMTP），建议使用应用专用密码
@@ -390,6 +393,7 @@ openclaw-sjtu/
 ├── LICENSE                      # MIT License
 ├── config.example.json          # 配置模板
 ├── scripts/
+│   ├── setup.py                 # 交互式配置向导
 │   ├── canvas_api.py            # Canvas LMS API（DDL / 课程 / 成绩）
 │   ├── calendar_sync.py         # 日历同步
 │   ├── sjtu_timetable_ics.py    # DDL / 课表导出 ICS
