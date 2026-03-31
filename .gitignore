@@ -1,6 +1,36 @@
+# 配置文件（含敏感凭证）
 config.json
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# 环境变量
+.env
+.env.local
+
+# 系统文件
 .DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 生成的临时文件
 *.ics
 sjtu_probe_results.json
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
