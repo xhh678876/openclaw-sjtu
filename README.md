@@ -84,7 +84,11 @@ cp config.example.json config.json
 # 编辑 config.json，填入你的凭证
 ```
 
-> **获取 Canvas Token：** 登录 [oc.sjtu.edu.cn](https://oc.sjtu.edu.cn) → 左下角「设置」→「新建访问许可证」→ 复制 Token
+> **各服务凭证获取方式：**
+> - **Canvas Token**：登录 [oc.sjtu.edu.cn](https://oc.sjtu.edu.cn) → 左下角「设置」→「新建访问许可证」→ 复制 Token
+> - **jAccount**：用于交大邮箱（IMAP/SMTP），建议使用应用专用密码
+> - **选课社区 Cookie**：通过浏览器登录 [course.sjtu.plus](https://course.sjtu.plus) 后导出 cookie
+> - **水源社区 API Key**：运行 `node scripts/shuiyuan_discourse.mjs auth init` 按提示授权
 
 ### 3. 开始使用
 
@@ -207,14 +211,17 @@ node scripts/shuiyuan_discourse.mjs topic <topic_id>
 
 ### 配置字段说明
 
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `canvas_token` | ✅ | Canvas API Token（在 oc.sjtu.edu.cn 设置中生成） |
-| `base_url` | ✅ | Canvas 地址，固定为 `https://oc.sjtu.edu.cn` |
-| `save_dir` | ❌ | 课件下载目录，默认 `~/Downloads/Canvas课件` |
-| `calendar_name` | ❌ | 日历名称，默认 `Canvas作业` |
-| `sjtu_username` | ❌ | jAccount 用户名（邮箱功能需要） |
-| `sjtu_password` | ❌ | jAccount 密码（邮箱功能需要） |
+| 字段 | 必填 | 适用功能 | 说明 |
+|------|------|----------|------|
+| `canvas_token` | ✅ | DDL / 课程 / 成绩 | Canvas API Token（oc.sjtu.edu.cn → 设置 → 新建访问许可证） |
+| `base_url` | ✅ | Canvas 全局 | 固定为 `https://oc.sjtu.edu.cn` |
+| `save_dir` | ❌ | 课件下载 | 课件保存目录，默认 `~/Downloads/Canvas课件` |
+| `calendar_name` | ❌ | DDL → 日历 | Apple 日历名称，默认 `Canvas作业` |
+| `sjtu_username` | ❌ | 邮箱 | jAccount 用户名 |
+| `sjtu_password` | ❌ | 邮箱 | jAccount 密码（建议使用应用专用密码） |
+| `course_sjtu_cookie` | ❌ | 课程评价 | 选课社区 session cookie（通过浏览器登录获取） |
+| `shuiyuan_user_api_key` | ❌ | 水源社区 | 水源论坛 User API Key（通过 `auth init` 授权获取） |
+| `shuiyuan_user_api_client_id` | ❌ | 水源社区 | 水源论坛 API Client ID（授权时自动生成） |
 
 ### API 端点
 

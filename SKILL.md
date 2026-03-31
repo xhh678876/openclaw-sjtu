@@ -294,14 +294,17 @@ node scripts/shuiyuan_discourse.mjs topic <topic_id>
 node scripts/shuiyuan_discourse.mjs categories
 ```
 
-首次使用需授权：
+**凭证配置**（三选一，按优先级）：
+
+1. **config.json**（推荐）：填入 `shuiyuan_user_api_key` 和 `shuiyuan_user_api_client_id`
+2. **环境变量**：设置 `SHUIYUAN_USER_API_KEY` 和 `SHUIYUAN_USER_API_CLIENT_ID`
+3. **交互授权**：
 ```bash
 node scripts/shuiyuan_discourse.mjs auth init
 # 按提示完成授权后：
 node scripts/shuiyuan_discourse.mjs auth finish --payload "<payload>"
 ```
-
-凭证存储于 `~/.openclaw/skills-data/shuiyuan-discourse/auth.json`。
+授权后凭证存储于 `~/.openclaw/skills-data/shuiyuan-discourse/auth.json`。
 
 ---
 
