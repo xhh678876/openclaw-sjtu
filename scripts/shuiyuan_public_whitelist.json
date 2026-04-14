@@ -1,0 +1,5 @@
+{
+  "_note": "Policy B: default-protect. Only topic_ids or category_ids listed here are ingested into the public 'posts' table. Everything else goes to 'posts_protected' and requires jAccount auth to access.",
+  "allowed_topic_ids": [],
+  "allowed_category_ids": []
+}

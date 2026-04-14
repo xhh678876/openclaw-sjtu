@@ -26,6 +26,10 @@ Thumbs.db
 *.ics
 sjtu_probe_results.json
 
+# 水源 RAG 抓取数据与向量库（含用户内容，不入 git）
+scripts/shuiyuan_data/
+scripts/shuiyuan_kb/
+
 # Node
 node_modules/
 
