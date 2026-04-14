@@ -233,20 +233,28 @@ def search_impl(
             c["_combined_score"] = (1 - time_weight) * vector_score + time_weight * recency_score
         candidates.sort(key=lambda x: x.get("_combined_score", 0), reverse=True)
 
-    # Rerank if available
+    # Rerank if available — always run when reranker exists (even if
+    # candidates <= max_results) so we get confidence scores.
     reranker = get_reranker()
-    if reranker and len(candidates) > max_results:
+    max_rerank: float | None = None
+    if reranker and candidates:
         pairs = [[query, c["text"]] for c in candidates]
         try:
             scores = reranker.compute_score(pairs, normalize=True)
-            scored = list(zip(candidates, scores))
-            scored.sort(key=lambda x: x[1], reverse=True)
-            candidates = [doc for doc, _ in scored[:max_results]]
+            for c, s in zip(candidates, scores):
+                c["_rerank"] = float(s)
+            candidates.sort(key=lambda c: c.get("_rerank", 0), reverse=True)
+            candidates = candidates[:max_results]
+            max_rerank = candidates[0]["_rerank"] if candidates else None
         except Exception as exc:
             log.warning("Rerank failed, using vector scores: %s", exc)
             candidates = candidates[:max_results]
     else:
         candidates = candidates[:max_results]
+
+    # Confidence threshold: rerank score < 0.3 means "no strongly relevant
+    # content found" — warn the caller in format_results.
+    low_confidence = max_rerank is not None and max_rerank < 0.3
 
     # Format results
     results = []
@@ -269,6 +277,9 @@ def search_impl(
             "views": doc.get("views", 0),
             "created_at": doc.get("created_at", ""),
             "url": doc.get("url", ""),
+            "_rerank": doc.get("_rerank"),
+            "_low_confidence": low_confidence,
+            "_is_protected": doc.get("_is_protected", False),
         })
 
     return results
@@ -280,6 +291,13 @@ def format_results(results: list[dict]) -> str:
         return "No results found."
 
     parts = []
+    if results[0].get("_low_confidence"):
+        top = results[0].get("_rerank")
+        parts.append(
+            f"⚠️ **低置信度结果** — 重排序最高分仅 {top:.3f} (<0.3),"
+            "语料里可能没有强相关内容,以下结果仅供宽泛参考,**不要当作权威信息引用**。\n"
+        )
+
     for i, r in enumerate(results, 1):
         protected_tag = " [校内保护内容]" if r.get("_is_protected") else ""
         header = f"**[{i}] {r['topic_title']}{protected_tag}**"

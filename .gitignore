@@ -29,6 +29,12 @@ sjtu_probe_results.json
 # 水源 RAG 抓取数据与向量库（含用户内容，不入 git）
 scripts/shuiyuan_data/
 scripts/shuiyuan_kb/
+# 评测产物（含原文片段，同属被保护数据）
+scripts/eval_results.json
+scripts/eval_scores.json
+scripts/eval_run.log
+scripts/ingest.log
+scripts/rerank_compare.log
 
 # Node
 node_modules/

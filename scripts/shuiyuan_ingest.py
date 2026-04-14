@@ -179,11 +179,21 @@ def chunk_topic_posts(
 
 # --- Embedding + DB ---
 
-def load_embedding_model(model_name: str = "BAAI/bge-m3", use_fp16: bool = True):
-    """Load BGE-M3 embedding model."""
-    log.info("Loading embedding model %s (fp16=%s)...", model_name, use_fp16)
+def load_embedding_model(
+    model_name: str = "BAAI/bge-m3",
+    use_fp16: bool = True,
+    device: str | None = None,
+):
+    """Load BGE-M3 embedding model.
+
+    device: 'mps' for Apple Silicon GPU, 'cuda' for NVIDIA, None = auto (CPU).
+    """
+    log.info("Loading embedding model %s (fp16=%s, device=%s)...", model_name, use_fp16, device or "auto")
     from FlagEmbedding import BGEM3FlagModel
-    model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
+    kwargs: dict = {"use_fp16": use_fp16}
+    if device:
+        kwargs["devices"] = [device]
+    model = BGEM3FlagModel(model_name, **kwargs)
     log.info("Model loaded.")
     return model
 
@@ -279,6 +289,7 @@ def main() -> None:
     parser.add_argument("--max-chunk-len", type=int, default=1500, help="Max characters per chunk")
     parser.add_argument("--incremental", action="store_true", help="Skip already-ingested topics")
     parser.add_argument("--no-fp16", action="store_true", help="Disable FP16 (use FP32)")
+    parser.add_argument("--device", default=None, help="Device: mps (Apple GPU), cuda, or omit for CPU")
 
     parser.add_argument(
         "--whitelist",
@@ -330,22 +341,34 @@ def main() -> None:
         sys.exit(1)
 
     # Load model
-    model = load_embedding_model(args.model, use_fp16=not args.no_fp16)
+    model = load_embedding_model(args.model, use_fp16=not args.no_fp16, device=args.device)
 
     # Open DB
     db = create_or_open_db(args.db_path)
 
-    # Track ingested topics for incremental mode
+    # Track ingested topics for incremental mode — union of public + protected
     ingested_topics: dict[int, int] = {}  # topic_id -> chunk_count
-    _table_ref = None
+    _public_table_ref = None
+    _protected_table_ref = None
     if args.incremental:
-        try:
-            _table_ref = db.open_table(args.table_name)
-            df = _table_ref.to_pandas()
-            ingested_topics = dict(df.groupby("topic_id").size())
-            log.info("Incremental mode: %d topics already ingested", len(ingested_topics))
-        except Exception:
-            log.info("Incremental mode: no existing table, starting fresh")
+        for tname, is_protected in (
+            (args.table_name, False),
+            (args.table_name + "_protected", True),
+        ):
+            try:
+                tref = db.open_table(tname)
+                df = tref.to_pandas()
+                counts = df.groupby("topic_id").size().to_dict()
+                for tid, n in counts.items():
+                    ingested_topics[int(tid)] = ingested_topics.get(int(tid), 0) + int(n)
+                if is_protected:
+                    _protected_table_ref = tref
+                else:
+                    _public_table_ref = tref
+                log.info("Incremental: %s has %d topics", tname, len(counts))
+            except Exception:
+                log.info("Incremental: table %s not present (skipped)", tname)
+        log.info("Incremental mode: %d topics already ingested across both tables", len(ingested_topics))
 
     # Load scrape state to detect updated topics
     scrape_state_file = args.data_dir / "_scrape_state.json"
@@ -375,10 +398,14 @@ def main() -> None:
                 # Simple heuristic: if post count changed, re-ingest
                 if post_count <= old_chunk_count:
                     continue
-                # Delete old entries for this topic before re-ingesting
+                # Delete old entries for this topic before re-ingesting (both tables)
                 log.info("Topic %d updated (%d -> %d posts), re-ingesting...", topic_id, old_chunk_count, post_count)
-                if _table_ref is not None:
-                    _table_ref.delete(f"topic_id = {topic_id}")
+                for tref in (_public_table_ref, _protected_table_ref):
+                    if tref is not None:
+                        try:
+                            tref.delete(f"topic_id = {topic_id}")
+                        except Exception:
+                            pass
             except Exception:
                 continue
 
