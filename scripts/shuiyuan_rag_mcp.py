@@ -177,9 +177,15 @@ def search_impl(
     output = model.encode([query], return_dense=True)
     query_vec = output["dense_vecs"][0].tolist()
 
-    # Check if user is authenticated for protected content
+    # Check if user is authenticated for protected content.
+    # SHUIYUAN_LOCAL_BYPASS=1 skips verification — only set on machines you
+    # personally own and trust (single-user laptop). Never on shared/server
+    # deployments or when MCP is exposed beyond localhost.
     include_protected = False
-    if jaccount_token:
+    if os.environ.get("SHUIYUAN_LOCAL_BYPASS") == "1":
+        include_protected = True
+        log.info("LOCAL_BYPASS active — protected table accessible without jAccount")
+    elif jaccount_token:
         include_protected = verify_jaccount(jaccount_token)
         if include_protected:
             log.info("jAccount verified, including protected content")

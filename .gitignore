@@ -35,6 +35,8 @@ scripts/eval_scores.json
 scripts/eval_run.log
 scripts/ingest.log
 scripts/rerank_compare.log
+scripts/regression.log
+scripts/regression_out/
 
 # Node
 node_modules/
