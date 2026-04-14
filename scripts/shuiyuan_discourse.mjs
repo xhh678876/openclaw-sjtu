@@ -43,12 +43,7 @@ const ALLOWED_READ_PREFIXES = [
 const ALLOWED_IMAGE_PREFIXES = ["/uploads/", "/secure-uploads/", "/user_avatar/", "/optimized/"];
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)(?:[?#].*)?$/i;
 
-const ENV_KEY_NAMES = ["SHUIYUAN_USER_API_KEY", "DISCOURSE_USER_API_KEY", "USER_API_KEY"];
-const ENV_CLIENT_ID_NAMES = [
-  "SHUIYUAN_USER_API_CLIENT_ID",
-  "DISCOURSE_USER_API_CLIENT_ID",
-  "USER_API_CLIENT_ID",
-];
+// Removed: environment variable credential sources — only link-based auth is supported.
 
 class SkillError extends Error {
   constructor(message) {
@@ -469,33 +464,7 @@ function extractCredentialForSite(raw, site) {
   return null;
 }
 
-function loadEnvCredential(site) {
-  let key = null;
-  for (const name of ENV_KEY_NAMES) {
-    const v = process.env[name];
-    if (v) {
-      key = v;
-      break;
-    }
-  }
-  if (!key) return null;
-
-  let clientId = null;
-  for (const name of ENV_CLIENT_ID_NAMES) {
-    const v = process.env[name];
-    if (v) {
-      clientId = v;
-      break;
-    }
-  }
-
-  return {
-    site: normalizeSite(site),
-    user_api_key: key,
-    user_api_client_id: clientId,
-    source: "env",
-  };
-}
+// Removed: loadEnvCredential — only link-based auth is supported.
 
 function loadFileCredential(site, filePath, source) {
   const raw = readJsonFile(filePath);
@@ -511,14 +480,11 @@ function loadFileCredential(site, filePath, source) {
 }
 
 function resolveCredential({ site, authFile }) {
-  const envCred = loadEnvCredential(site);
-  if (envCred) return envCred;
-
   const authCred = loadFileCredential(site, authFile, "auth_file");
   if (authCred) return authCred;
 
   throw new CredentialError(
-    "No User API credential found. Run 'auth init' (get link) then 'auth finish', or run 'auth import', or set SHUIYUAN_USER_API_KEY.",
+    "No credential found. Run 'auth init' to generate an authorization link, open it in browser to authorize, then run 'auth finish --payload <payload>' to complete login.",
   );
 }
 
@@ -1226,9 +1192,8 @@ function withCommonPayload(base, result, cred) {
 }
 
 async function handleAuthStatus(ctx) {
-  const envCred = loadEnvCredential(ctx.site);
   const authCred = loadFileCredential(ctx.site, ctx.authFile, "auth_file");
-  const resolved = envCred || authCred;
+  const resolved = authCred;
 
   let pending = null;
   let pendingError = null;
@@ -1271,14 +1236,14 @@ async function handleAuthStatus(ctx) {
     },
     guidance: resolved
       ? "Credential is available."
-      : "No credential found. Run auth init to generate an authorization link, then auth finish with payload, or use auth import.",
+      : "No credential found. Run 'auth init' to generate an authorization link, open it in browser, then run 'auth finish --payload <payload>'.",
   };
 }
 
 function completeAuthFromPending(ctx, payloadInput) {
   const pending = loadPendingAuth(ctx.authPendingFile);
   if (!pending) {
-    throw new SkillError("No pending auth session found. Run 'auth init' first, or use 'auth import'.");
+    throw new SkillError("No pending auth session found. Run 'auth init' first to generate an authorization link.");
   }
   if (normalizeSite(pending.site) !== normalizeSite(ctx.site)) {
     throw new SkillError(
@@ -1396,7 +1361,6 @@ async function handleAuthInit(ctx, args) {
       action:
         "Send auth_url, ask whether the user also needs a QR version, and if a QR is generated send it as media rather than only reading it locally. Then ask the user to open the link, approve, and provide the encrypted payload to complete login.",
       complete_with: "auth finish --payload <encrypted_payload>",
-      alternative: "auth import --user-api-key <key> --client-id <client-id>",
     },
   };
 }
@@ -1411,22 +1375,7 @@ async function handleAuthFinish(ctx, args) {
   };
 }
 
-async function handleAuthImport(ctx, args) {
-  if (!args.user_api_key) {
-    throw new SkillError("Missing required argument: --user-api-key");
-  }
-
-  saveRuntimeCredential(ctx.authFile, ctx.site, args.user_api_key, args.client_id || null);
-  return {
-    ok: true,
-    site: ctx.site,
-    saved: {
-      path: ctx.authFile,
-      has_client_id: Boolean(args.client_id),
-      updated_at: utcNowIso(),
-    },
-  };
-}
+// Removed: handleAuthImport — only link-based auth (init + finish) is supported.
 
 function requireCredential(ctx) {
   return resolveCredential({
@@ -2221,14 +2170,7 @@ function parseCommand(command, commandTokens) {
     }
 
     if (sub === "import") {
-      const key = options["--user-api-key"] || null;
-      return {
-        kind: "auth_import",
-        args: {
-          user_api_key: key,
-          client_id: options["--client-id"] || null,
-        },
-      };
+      throw new SkillError("'auth import' is no longer supported. Use 'auth init' to generate a link, then 'auth finish --payload <payload>'.");
     }
 
     if (sub === "finish" || sub === "complete") {
@@ -2390,12 +2332,12 @@ function parseCommand(command, commandTokens) {
 }
 
 function getGlobalHelp() {
-  return `Usage: shuiyuan_discourse.mjs [global-options] <command> [command-options]\n\nCommands:\n  auth          Credential operations (status|init|finish|import)\n  search        Search topics and posts\n  latest        List latest topics\n  topic         Read one topic and posts\n  post          Read one post (concise)\n  post-raw      Read one post (full raw JSON)\n  vision-check  Check whether model supports image input\n  categories    List categories\n  filter        Filter topics\n  image         Resolve/fetch one forum image for multimodal input\n\nGlobal options:\n  --site <url>                Discourse site URL (default: ${DEFAULT_SITE})\n  --runtime <auto|node|curl>  HTTP runtime (default: auto)\n  --timeout <seconds>         Request timeout (default: ${DEFAULT_TIMEOUT})\n  --auth-file <path>          Runtime credential file\n  --auth-pending-file <path>  Pending auth-session file\n  --image-cache-dir <path>    Local image cache directory`;
+  return `Usage: shuiyuan_discourse.mjs [global-options] <command> [command-options]\n\nCommands:\n  auth          Credential operations (status|init|finish)\n  search        Search topics and posts\n  latest        List latest topics\n  topic         Read one topic and posts\n  post          Read one post (concise)\n  post-raw      Read one post (full raw JSON)\n  vision-check  Check whether model supports image input\n  categories    List categories\n  filter        Filter topics\n  image         Resolve/fetch one forum image for multimodal input\n\nGlobal options:\n  --site <url>                Discourse site URL (default: ${DEFAULT_SITE})\n  --runtime <auto|node|curl>  HTTP runtime (default: auto)\n  --timeout <seconds>         Request timeout (default: ${DEFAULT_TIMEOUT})\n  --auth-file <path>          Runtime credential file\n  --auth-pending-file <path>  Pending auth-session file\n  --image-cache-dir <path>    Local image cache directory`;
 }
 
 function getCommandHelp(command) {
   const helps = {
-    auth: `Usage: shuiyuan_discourse.mjs auth <status|init|finish|import> [options]\n\ninit options:\n  --application-name <name>\n  --client-id <id>\n  --scopes <csv>\n  --nonce <nonce>\n\nfinish options:\n  --payload <encrypted_payload> (required)\n\nimport options:\n  --user-api-key <key> (required)\n  --client-id <id>`,
+    auth: `Usage: shuiyuan_discourse.mjs auth <status|init|finish> [options]\n\nOnly link-based authorization is supported.\n\ninit options:\n  --application-name <name>\n  --client-id <id>\n  --scopes <csv>\n  --nonce <nonce>\n\nfinish options:\n  --payload <encrypted_payload> (required)\n\nWorkflow:\n  1. Run 'auth init' to get an authorization link\n  2. Open the link in browser and approve\n  3. Copy the encrypted payload from the page\n  4. Run 'auth finish --payload <payload>' to complete`,
     search:
       "Usage: shuiyuan_discourse.mjs search <query> [--page <n>] [--max-results <n>] [--max-post-results <n>]",
     latest: "Usage: shuiyuan_discourse.mjs latest [--page <n>] [--max-results <n>]",
@@ -2419,7 +2361,7 @@ async function execute(ctx, parsedCommand) {
     case "auth_init":
       return handleAuthInit(ctx, parsedCommand.args);
     case "auth_import":
-      return handleAuthImport(ctx, parsedCommand.args);
+      throw new SkillError("'auth import' is no longer supported. Use 'auth init' + 'auth finish'.");
     case "auth_finish":
       return handleAuthFinish(ctx, parsedCommand.args);
     case "search":
