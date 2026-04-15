@@ -3,7 +3,7 @@ name: sjtu-canvas
 version: 1.0.0
 license: MIT
 description: |
-  上海交通大学全能校园助手。覆盖 Canvas 作业管理、课程评价、校园匹配、校园生活、学术工具等 21 项功能。
+  上海交通大学全能校园助手。覆盖 Canvas 作业管理、课程评价、校园匹配、校园生活、学术工具等 21 项功能，并支持 Canvas 学生端 / 教师端双 profile。
   触发场景:
   (1) 查看/追踪作业DDL、提交状态、成绩
   (2) 下载课件、AI总结、作业辅导
@@ -33,6 +33,8 @@ description: |
 - 当前用户的课程列表通过 Canvas API 自动获取
 - 所有脚本位于 `scripts/` 目录，用 `python3` 执行
 - PPT 模板位于 `templates/`
+- Canvas 现支持单 token 兼容模式，也支持学生端 / 教师端双 profile 配置
+- CLI 可用 `--profile student` 或 `--profile teacher` 显式切换，也可通过 `canvas_default_profile` 设默认身份
 
 ---
 
@@ -43,8 +45,9 @@ description: |
 **触发**: "我有什么作业"、"DDL"、"截止"、"未交作业"
 
 ```bash
-python3 scripts/canvas_api.py ddls        # 未交作业 + 倒计时
-python3 scripts/canvas_api.py ddls-all    # 学期全景报告
+python3 scripts/canvas_api.py ddls                      # 用默认 profile 查未交作业
+python3 scripts/canvas_api.py ddls-all                  # 学期全景报告
+python3 scripts/canvas_api.py --profile student ddls    # 明确用学生端查询
 ```
 
 ### 2. DDL → Apple 日历
@@ -263,7 +266,14 @@ python3 scripts/canvas_api.py download <course_id> <filename>
 
 ```bash
 python3 scripts/canvas_api.py grades
+python3 scripts/canvas_api.py --profile teacher courses
+python3 scripts/canvas_api.py --profile teacher me
 ```
+
+教师端与学生端区别：
+- 学生端：更适合查个人课程、作业、DDL、成绩、提交状态
+- 教师端：更适合查管理课程、全班提交情况、成绩册、课程配置与后续写操作扩展
+- 若配置了双 profile，涉及“全班/课程管理”的请求默认优先考虑教师端
 
 ### 提交作业
 

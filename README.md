@@ -162,7 +162,7 @@ Canvas 是核心功能的基础，**必须配置**。
 
 **Step 6：** **立即复制**生成的 Token（关闭弹窗后将无法再次查看）
 
-**Step 7：** 填入配置：
+**Step 7：** 最简单的单 token 配置如下：
 ```json
 {
   "canvas_token": "你复制的Token",
@@ -170,7 +170,36 @@ Canvas 是核心功能的基础，**必须配置**。
 }
 ```
 
-**验证是否成功：** 直接对 AI 说「我有什么作业没交」，看到作业列表就说明配置成功 ✅
+**如果你同时有学生端 / 教师端两个 token，推荐改成双 profile 配置：**
+```json
+{
+  "base_url": "https://oc.sjtu.edu.cn",
+  "canvas_default_profile": "student",
+  "canvas_profiles": {
+    "student": {
+      "token": "你的学生端Token"
+    },
+    "teacher": {
+      "token": "你的教师端Token"
+    }
+  }
+}
+```
+
+这样后续就可以区分：
+- 学生端：查自己的课、作业、DDL、成绩
+- 教师端：查管理课程、全班提交情况、成绩册、课程配置
+
+CLI 也支持显式切换：
+```bash
+python3 scripts/canvas_api.py --profile student ddls
+python3 scripts/canvas_api.py --profile teacher courses
+python3 scripts/canvas_api.py --profile teacher me
+```
+
+**验证是否成功：**
+- 学生端直接对 AI 说「我有什么作业没交」
+- 教师端可运行 `python3 scripts/canvas_api.py --profile teacher courses`
 
 > ⚠️ Token 没有过期时间，但你可以随时在设置页面删除并重新生成。
 

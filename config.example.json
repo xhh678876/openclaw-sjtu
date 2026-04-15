@@ -1,6 +1,17 @@
 {
   "canvas_token": "YOUR_CANVAS_API_TOKEN",
   "base_url": "https://oc.sjtu.edu.cn",
+  "canvas_default_profile": "student",
+  "canvas_profiles": {
+    "student": {
+      "token": "YOUR_STUDENT_CANVAS_TOKEN",
+      "base_url": "https://oc.sjtu.edu.cn"
+    },
+    "teacher": {
+      "token": "YOUR_TEACHER_CANVAS_TOKEN",
+      "base_url": "https://oc.sjtu.edu.cn"
+    }
+  },
   "save_dir": "~/Downloads/Canvas课件",
   "calendar_name": "Canvas作业",
 
