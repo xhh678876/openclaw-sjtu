@@ -460,6 +460,7 @@ node scripts/shuiyuan_discourse.mjs auth finish --payload "你复制的payload"
 
 📄 使用模板: 上海交通大学通用PPT模板
 📝 读取你提供的内容大纲...
+🎯 自动清理模板示例页并优化文字样式...
 
 ✅ PPT 已生成！共 12 页
 
@@ -480,6 +481,11 @@ node scripts/shuiyuan_discourse.mjs auth finish --payload "你复制的payload"
   • 暗夜奔驰（深色科技）
   • 浩瀚星河（星空主题）
   • ...
+
+默认会额外处理：
+  • 清理模板自带示例页
+  • 标题/正文自动落位到正确区域
+  • 标题颜色、正文字号、层级与强调色优化
 ```
 
 ### 💘 "帮我填问卷，想找个温柔的南方女生"

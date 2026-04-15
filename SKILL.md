@@ -167,6 +167,23 @@ python3 scripts/generate_ppt.py \
 
 模板目录: `templates/`
 
+默认行为：
+- 自动清空模板自带示例页，避免生成内容被追加到模板样例后面
+- 优先按版式名称匹配交大模板，减少占位符错位
+- 自动把标题和正文放进正确的模板区域
+- 默认执行文字样式优化，修正标题颜色、正文字号、层级和强调色
+
+如需关闭默认文字优化：
+
+```bash
+python3 scripts/generate_ppt.py \
+  --title "标题" \
+  --markdown content.md \
+  --template "0.上海交通大学通用PPT模板.pptx" \
+  --output output.pptx \
+  --no-polish
+```
+
 ### 13. 正版软件
 
 **触发**: "正版软件"、"MATLAB"、"Office"
