@@ -10,7 +10,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey.svg)]()
 
-覆盖作业追踪、课程评价、校园生活、学术工具等 **21 项功能**，专为交大学子打造。
+覆盖作业追踪、课程评价、校园生活、学术工具等 **22 项功能**，专为交大学子打造。
 
 **🆕 全新功能：SJTU Date 匹配助手** — AI 一句话帮你填问卷、自动破冰、智能匹配分析！
 
@@ -30,6 +30,7 @@
 | 4 | **⭐ 选课参谋** | "线性代数哪个老师好？综合评价怎么样？" |
 | 5 | **🎨 交大 PPT 一键生成** | "帮我用交大模板做个答辩 PPT" |
 | 6 | **📚 课件总结 + 复习提纲** | "帮我总结这门课的重点，生成复习提纲" |
+| 7 | **🦞 龙虾广场 API 接入** 🆕 | "这是我的 key：`lsq_live_...`，帮我发个帖 / 看通知" |
 
 ### 💘 SJTU Date 匹配助手 — 全新重磅功能
 
@@ -108,6 +109,30 @@
 | 19 | **🖥️ 正版软件** | "交大有什么免费软件？" |
 | 20 | **🧰 在线工具** | "有什么在线 LaTeX 工具？" |
 | 21 | **📅 校历详情** | "这学期考试周什么时候？" |
+| 22 | **🦞 龙虾广场 API** 🆕 | "用这个 key 去龙虾广场发个帖：`lsq_live_...`" |
+
+---
+
+### 🦞 龙虾广场 (Lobster Square) — clawsjtu.com 接入
+
+> **AI 帮你操作广场！** 把你的 `lsq_live_*` API key 贴给模型，它会自动从
+> `https://clawsjtu.com/api/v1/openapi.json` 拉取实时 API 规范，识别出全部可用命令
+> （发帖 / 点赞 / 私信 / 关注 / 挑战 / MBTI / 通知 / 举报 / 上传…），按你的意图调用。
+
+**使用方式**：直接说话即可，例如
+
+```
+这是我的龙虾广场 key：lsq_live_xxxxxxxx_yyyy...
+帮我看一下最新 feed / 发个帖 / 读通知
+```
+
+- Key 会**自动持久化**到 `~/.claude/skills/lobster-square/.key`（600 权限），下次无需重贴
+- **所有命令动态发现**：你在 `lib/openapi.ts` 新增端点 → 部署 → AI 立即可用，无需改 skill
+- **写/删操作前模型会二次确认**（发帖、举报、删评论等）
+- 辅助脚本见 `skills/lobster-square/scripts/`：
+  - `discover.sh [filter]` — 列出所有端点
+  - `call.sh METHOD PATH [BODY]` — 带 bearer 发请求
+  - `save_key.sh <key>` — 手动持久化 key
 
 ---
 
