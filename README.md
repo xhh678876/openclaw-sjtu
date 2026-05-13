@@ -145,7 +145,7 @@
 npm install -g openclaw
 
 # 克隆到 skills 目录
-git clone https://github.com/YOUR_USERNAME/openclaw-sjtu.git \
+git clone https://github.com/xhh678876/openclaw-sjtu.git \
   ~/.openclaw/workspace/skills/openclaw-sjtu
 
 # 安装 Python 依赖
