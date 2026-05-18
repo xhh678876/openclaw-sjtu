@@ -52,19 +52,32 @@ GEEK_CAPTCHA_API = "https://geek.sjtu.edu.cn/captcha-solver/"
 # ── 验证码识别 ───────────────────────────────────────────────────────────────
 
 def _png_to_jpeg(png_bytes: bytes) -> bytes:
+    """缩到 110x40 JPEG —— 极客协会 captcha API 体积上限很紧。
+
+    PIL 缺失时直接 raise:之前静默 fallback 到原 PNG(几十 KB)会让 API
+    返回 413 PAYLOAD TOO LARGE,所有 jAccount 登录都失败,极难定位。
+    """
     try:
         from PIL import Image  # type: ignore
-        img = Image.open(io.BytesIO(png_bytes)).convert("RGB").resize((110, 40))
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
-    except ImportError:
-        return png_bytes
+    except ImportError as e:
+        raise RuntimeError(
+            "Pillow 未安装。验证码识别需要把截图缩成 ~700B JPEG。"
+            "安装:pip install Pillow"
+        ) from e
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB").resize((110, 40))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
 
 
 def solve_captcha_geek(img_bytes: bytes) -> str | None:
     try:
         jpeg = _png_to_jpeg(img_bytes)
+    except RuntimeError as e:
+        # PIL 缺失 —— 让用户看见,不要静默降级到肯定会 413 的路径
+        print(f"  [CAPTCHA] {e}")
+        return None
+    try:
         r = requests.post(
             GEEK_CAPTCHA_API,
             files={"image": ("captcha.jpg", jpeg, "image/jpeg")},
@@ -113,7 +126,12 @@ def solve_captcha(img_bytes: bytes) -> str:
     if code:
         print(f"  [CAPTCHA] Claude 识别：{code}")
         return code
-    # 手动兜底
+    # 手动兜底 —— 仅 tty 下生效;非交互环境(launchd / 后台)直接返回空,
+    # 让上层把"验证码错误"算作登录失败,而不是 EOFError 崩溃整个流程
+    if not sys.stdin.isatty():
+        print("  [CAPTCHA] 自动识别全失败 + 非 tty 环境,跳过手动输入",
+              file=sys.stderr)
+        return ""
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         f.write(img_bytes)
         tmp = f.name
@@ -126,7 +144,10 @@ def solve_captcha(img_bytes: bytes) -> str:
             subprocess.Popen(["xdg-open", tmp])
     except Exception:
         pass
-    code = input(f"  [CAPTCHA] 自动识别失败，请手动输入（图片：{tmp}）：").strip()
+    try:
+        code = input(f"  [CAPTCHA] 自动识别失败，请手动输入（图片：{tmp}）：").strip()
+    except EOFError:
+        code = ""
     try:
         os.unlink(tmp)
     except Exception:

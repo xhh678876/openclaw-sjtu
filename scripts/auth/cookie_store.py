@@ -89,8 +89,19 @@ class CookieStore:
         self.save(cfg)
 
     # ── 从 Playwright BrowserContext 收集 ───────────────────────────────────
-    def collect_from_playwright(self, ctx, domains: Iterable[str] | None = None) -> list[str]:
+    def collect_from_playwright(
+        self, ctx, domains: Iterable[str] | None = None,
+        *, merge: bool = True,
+    ) -> list[str]:
         """从 Playwright 的 BrowserContext.cookies() 中按域名归集并写入 config.json。
+
+        merge=True (默认) — 与已有 cookies 合并,新值覆盖旧同名,**不会**删除
+                            已存在但 Playwright 本次没有的 cookies。
+                            这是默认值的关键原因:一次失败的 Playwright 会话
+                            可能只拿到 JSESSIONID,如果直接替换会把上一次
+                            完整登录得到的 JATrustCookie / JAAuthCookie 丢掉,
+                            害得下次必须重新走 2FA。
+        merge=False — 整组替换(老行为)。仅在调用方确定本次 cookies 完整时用。
 
         Returns: 成功更新的 config key 列表。
         """
@@ -111,7 +122,11 @@ class CookieStore:
         cfg = self.load()
         updated = []
         for key, cookies in bucket.items():
-            cfg[key] = cookies
+            if merge:
+                existing = cfg.get(key) or {}
+                cfg[key] = {**existing, **cookies}
+            else:
+                cfg[key] = cookies
             updated.append(key)
         self.save(cfg)
         return updated

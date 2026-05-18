@@ -56,25 +56,71 @@ PLATFORM_ENTRIES = [
 ]
 
 
+_CAPTCHA_DUMP_DIR = Path.home() / "openclaw-sjtu" / "data" / "captcha_failures"
+
+# jAccount 错误文本指纹 —— 用来区分"验证码错"(可重试)vs"密码错"(白搭再试)
+_CAPTCHA_ERR_SIGS = ("验证码", "captcha", "校验码")
+_CRED_ERR_SIGS = ("密码错", "账号或密码", "用户名或密码", "incorrect password",
+                   "wrong password", "invalid credentials", "用户不存在")
+
+
+def _extract_error_text(page) -> str:
+    """从 jAccount 错误提示中拿到最具诊断价值的文本片段。"""
+    try:
+        return page.evaluate("""() => {
+            const alerts = [...document.querySelectorAll(
+                '.alert-danger, [class*=errorMsg], .error-msg, .login-error')];
+            const text = alerts.map(a => a.innerText || '').join(' | ').trim();
+            return text || (document.body.innerText || '').slice(0, 400);
+        }""") or ""
+    except Exception:
+        return ""
+
+
+def _classify_login_error(err_text: str) -> str:
+    """captcha / cred / unknown"""
+    low = err_text.lower()
+    if any(s in err_text for s in _CAPTCHA_ERR_SIGS) or "captcha" in low:
+        return "captcha"
+    if any(s in err_text for s in _CRED_ERR_SIGS):
+        return "cred"
+    return "unknown"
+
+
+def _dump_captcha_for_debug(img: bytes, tag: str) -> Path | None:
+    try:
+        _CAPTCHA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+        p = _CAPTCHA_DUMP_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S-%f}.png"
+        p.write_bytes(img)
+        p.chmod(0o600)
+        return p
+    except Exception:
+        return None
+
+
 def _fill_jaccount_form(page, username: str, password: str,
-                         twofa_wait_sec: int = 180) -> bool:
+                         twofa_wait_sec: int = 180,
+                         max_attempts: int = 5) -> bool:
     """已跳到 jaccount 登录页时填表，自动处理验证码 + 2FA。
 
     - 验证码：极客协会 ResNet → Claude → 手动
     - 2FA：检测到二步验证页面后，自动勾选"信任设备"复选框，
             然后等待用户扫码或在终端粘贴 SMS/邮件验证码
+    - 错误分类:验证码错误→重试到 max_attempts;密码错→立刻放弃
     """
     page.evaluate("if (typeof switchLoginType === 'function') switchLoginType('password')")
     page.wait_for_timeout(400)
     page.fill("#input-login-user", username)
     page.fill("#input-login-pass", password)
 
-    for attempt in range(3):
-        # 验证码
+    for attempt in range(max_attempts):
+        # 验证码 —— 失败时把图存下来便于人工核对 OCR
+        captcha_img: bytes | None = None
         try:
             cap = page.locator("#captcha-img")
             if cap.count() and cap.is_visible():
-                code = solve_captcha(cap.screenshot())
+                captcha_img = cap.screenshot()
+                code = solve_captcha(captcha_img)
                 page.fill("#input-login-captcha", code)
         except Exception:
             pass
@@ -137,8 +183,22 @@ def _fill_jaccount_form(page, username: str, password: str,
                 print("  [2FA] ✗ 等待超时")
                 return False
 
-        # 普通错误：账号 / 密码 / 验证码
-        print(f"  [jAccount] 第 {attempt+1} 次失败（账号/密码/验证码错误？）")
+        # 普通错误:分类后决定是否重试
+        err_text = _extract_error_text(page)
+        category = _classify_login_error(err_text)
+        snippet = err_text[:120].replace("\n", " ")
+        print(f"  [jAccount] 第 {attempt+1}/{max_attempts} 次失败 [{category}]: {snippet}")
+
+        if category == "cred":
+            print("  [jAccount] ✗ 凭据错误,放弃重试(避免触发账号锁定)")
+            return False
+
+        # captcha or unknown → 把当前验证码图存档,便于人工对一下 OCR
+        if captcha_img:
+            dumped = _dump_captcha_for_debug(captcha_img, f"attempt{attempt+1}")
+            if dumped:
+                print(f"  [debug] 验证码截图: {dumped}")
+
         try:
             page.evaluate("if (typeof refreshCaptcha === 'function') refreshCaptcha()")
         except Exception:
@@ -445,21 +505,42 @@ def main():
 
     # ── 登录 ────────────────────────────────────────────────────────────────
     if not args.skip_login:
-        # 步骤 0：从系统 Chrome 偷 cookies —— 关键是 JATrustCookie，让 Playwright
-        # 在 jAccount 跳过 2FA。不论之后是否走 Playwright，这一步都很有价值
+        # 步骤 0:收集 seed cookies(用于让 Playwright 跳过 2FA / 复用 session)
+        #   来源 A:config.json 已存的 jaccount_cookies / *_cookies(本机历史)
+        #   来源 B:系统 Chrome 数据库(浏览器现成 session)
+        # 关键 cookie 是 JATrustCookie + JAAuthCookie —— 注入后 jAccount 认为
+        # 本次是已经通过 2FA 的可信设备,直接放行。
         chrome_imported: dict = {}
         seed_cookies: dict[str, dict[str, str]] = {}
+
+        # 来源 A: config.json 历史 cookies(优先,即便 chrome 没装也能用)
+        _CFG_DOMAIN_MAP = {
+            "jaccount_cookies":  "jaccount.sjtu.edu.cn",
+            "i_sjtu_cookies":    "i.sjtu.edu.cn",
+            "calendar_cookies":  "calendar.sjtu.edu.cn",
+            "phycai_cookies":    "www.phycai.sjtu.edu.cn",
+            "lcme_cookies":      "lcme.sjtu.edu.cn",
+        }
+        for cfg_key, domain in _CFG_DOMAIN_MAP.items():
+            cookies = store.get_cookies(cfg_key)
+            if cookies:
+                seed_cookies[domain] = {**seed_cookies.get(domain, {}), **cookies}
+        if seed_cookies:
+            n_total = sum(len(v) for v in seed_cookies.values())
+            print(f"\n[0a/2] config.json 历史 cookies:{n_total} 个,"
+                  f"覆盖 {sorted(seed_cookies.keys())}")
+
+        # 来源 B: 系统 Chrome (可选)
         if not args.no_chrome_import:
-            print("\n[0/2] 从系统浏览器读取 cookies（用于 2FA 跳过）…")
+            print("[0b/2] 从系统浏览器读取 cookies(覆盖/补充上面)…")
             try:
                 from scripts.auth.chrome_cookies import (
                     import_from_browser, PLATFORMS as _CC_PLAT,
                 )
                 chrome_imported = import_from_browser(store=store)
-                # 把每个平台的 cookies 按 domain 整理给 Playwright 注入
                 for plat, cookies in chrome_imported.items():
                     domain = _CC_PLAT[plat]["domain"]
-                    seed_cookies[domain] = cookies
+                    seed_cookies[domain] = {**seed_cookies.get(domain, {}), **cookies}
             except Exception as e:
                 print(f"  浏览器 cookie 导入失败：{e}")
 

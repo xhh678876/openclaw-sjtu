@@ -127,3 +127,39 @@ def test_collect_from_playwright_groups_by_domain(tmp_store: CookieStore) -> Non
     assert saved["phycai_cookies"] == {"PHPSESSID": "p1", ".ASPXAUTH": "p2"}
     assert saved["i_sjtu_cookies"] == {"JSESSIONID": "j1"}
     assert "ignored" not in json.dumps(saved)
+
+
+def test_collect_from_playwright_merges_by_default(tmp_store: CookieStore) -> None:
+    """回归测试:失败的 Playwright 会话只拿到 JSESSIONID,不能把上次的
+    JATrustCookie 替换没了 —— 否则下次必须重新 2FA。"""
+    tmp_store.save({"jaccount_cookies": {
+        "JATrustCookie": "trust_value_from_prev_2fa",
+        "JAAuthCookie": "auth_value",
+        "JSESSIONID": "old_session",
+    }})
+    # 模拟一次"半截"的 Playwright session —— 只有 JSESSIONID
+    fake_ctx = MagicMock()
+    fake_ctx.cookies.return_value = [
+        {"domain": "jaccount.sjtu.edu.cn", "name": "JSESSIONID", "value": "new_session"},
+    ]
+    tmp_store.collect_from_playwright(fake_ctx)
+
+    saved = tmp_store.get_cookies("jaccount_cookies")
+    # JATrustCookie 必须保留,否则下次走不过 2FA
+    assert saved["JATrustCookie"] == "trust_value_from_prev_2fa"
+    assert saved["JAAuthCookie"] == "auth_value"
+    # JSESSIONID 应该被新值覆盖
+    assert saved["JSESSIONID"] == "new_session"
+
+
+def test_collect_from_playwright_replace_when_merge_false(tmp_store: CookieStore) -> None:
+    """显式 merge=False 时是老行为:整组替换。"""
+    tmp_store.save({"jaccount_cookies": {"JATrustCookie": "keep_me_no"}})
+    fake_ctx = MagicMock()
+    fake_ctx.cookies.return_value = [
+        {"domain": "jaccount.sjtu.edu.cn", "name": "JSESSIONID", "value": "s"},
+    ]
+    tmp_store.collect_from_playwright(fake_ctx, merge=False)
+    saved = tmp_store.get_cookies("jaccount_cookies")
+    assert "JATrustCookie" not in saved
+    assert saved == {"JSESSIONID": "s"}

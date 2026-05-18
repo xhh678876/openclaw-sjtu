@@ -34,6 +34,7 @@ data/distilled/
 data/playwright_profile/
 data/sjtu_kb.db
 data/sjtu_calendar.json
+data/captcha_failures/
 
 # 水源 RAG 抓取数据与向量库（含用户内容，不入 git）
 scripts/shuiyuan_data/
