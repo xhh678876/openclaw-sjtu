@@ -1,0 +1,272 @@
+# SJTU 全站信息源种子清单 (Layers 1-3)
+# type: jwc | grad | student | career | library | it | department | platform
+# list_url: 通知/新闻列表页; item_selector: 列表项 CSS; title_selector / date_selector / link_selector 相对 item
+# detail_selector: 正文容器; date_fmt: 日期解析格式
+# encoding: 部分老站是 utf-8 / gb2312
+# update_freq: daily | weekly
+# notes: 备注
+
+defaults:
+  item_selector: "ul.list_main_content li, ul.wp_article_list li, .news_list li, li.news"
+  title_selector: "a"
+  link_selector: "a"
+  date_selector: ".time, .date, .news_meta, span"
+  detail_selector: ".wp_articlecontent, .v_news_content, #vsb_content, .article, .content, #content"
+  encoding: "utf-8"
+  update_freq: "daily"
+
+# ============================================================
+# Layer 1 — 官方核心
+# ============================================================
+sites:
+  - name: 教务处通知
+    type: jwc
+    list_url: https://jwc.sjtu.edu.cn/index/mxxsdtz.htm
+    base_url: https://jwc.sjtu.edu.cn
+    priority: 1
+
+  - name: 教务处新闻
+    type: jwc
+    list_url: https://jwc.sjtu.edu.cn/xwzx/jwxw.htm
+    base_url: https://jwc.sjtu.edu.cn
+    priority: 1
+
+  - name: 研究生院通知
+    type: grad
+    list_url: https://www.gs.sjtu.edu.cn/tzgg.htm
+    base_url: https://www.gs.sjtu.edu.cn
+    priority: 1
+
+  - name: 学生事务中心
+    type: student
+    list_url: https://stu.sjtu.edu.cn/xwzx/tzgg.htm
+    base_url: https://stu.sjtu.edu.cn
+    priority: 1
+
+  - name: 就业中心通知
+    type: career
+    list_url: https://www.career.sjtu.edu.cn/tzgg.htm
+    base_url: https://www.career.sjtu.edu.cn
+    priority: 1
+
+  - name: 图书馆通知
+    type: library
+    list_url: https://www.lib.sjtu.edu.cn/f/news/notice
+    base_url: https://www.lib.sjtu.edu.cn
+    priority: 2
+
+  - name: 网络信息中心
+    type: it
+    list_url: https://net.sjtu.edu.cn/tzgg.htm
+    base_url: https://net.sjtu.edu.cn
+    priority: 2
+
+  - name: 国际合作与交流处
+    type: intl
+    list_url: https://sjo.sjtu.edu.cn/tzgg.htm
+    base_url: https://sjo.sjtu.edu.cn
+    priority: 2
+
+  - name: 党委宣传部新闻
+    type: news
+    list_url: https://news.sjtu.edu.cn/jdyw/index.html
+    base_url: https://news.sjtu.edu.cn
+    priority: 1
+
+  - name: 信息公开
+    type: gk
+    list_url: https://gk.sjtu.edu.cn
+    base_url: https://gk.sjtu.edu.cn
+    priority: 2
+
+  # ============================================================
+  # Layer 2 — 院系 (覆盖主要学院/学部)
+  # ============================================================
+  - name: 机械与动力工程学院
+    type: department
+    list_url: https://me.sjtu.edu.cn/tzgg.html
+    base_url: https://me.sjtu.edu.cn
+    priority: 2
+
+  - name: 电子信息与电气工程学院
+    type: department
+    list_url: https://www.seiee.sjtu.edu.cn/tzgg.html
+    base_url: https://www.seiee.sjtu.edu.cn
+    priority: 2
+
+  - name: 材料科学与工程学院
+    type: department
+    list_url: https://smse.sjtu.edu.cn/xwzx/tzgg.html
+    base_url: https://smse.sjtu.edu.cn
+    priority: 2
+
+  - name: 化学化工学院
+    type: department
+    list_url: https://scce.sjtu.edu.cn/tzgg/index.html
+    base_url: https://scce.sjtu.edu.cn
+    priority: 2
+
+  - name: 物理与天文学院
+    type: department
+    list_url: https://physics.sjtu.edu.cn/xwzx/tzgg
+    base_url: https://physics.sjtu.edu.cn
+    priority: 2
+
+  - name: 数学科学学院
+    type: department
+    list_url: https://math.sjtu.edu.cn/News/Notices
+    base_url: https://math.sjtu.edu.cn
+    priority: 2
+
+  - name: 致远学院
+    type: department
+    list_url: https://zhiyuan.sjtu.edu.cn/articles/1
+    base_url: https://zhiyuan.sjtu.edu.cn
+    priority: 2
+
+  - name: 安泰经济与管理学院
+    type: department
+    list_url: https://www.acem.sjtu.edu.cn/xyxw.html
+    base_url: https://www.acem.sjtu.edu.cn
+    priority: 2
+
+  - name: 凯原法学院
+    type: department
+    list_url: https://law.sjtu.edu.cn/xwzx/tzgg.html
+    base_url: https://law.sjtu.edu.cn
+    priority: 3
+
+  - name: 外国语学院
+    type: department
+    list_url: https://sfl.sjtu.edu.cn/tzgg.html
+    base_url: https://sfl.sjtu.edu.cn
+    priority: 3
+
+  - name: 医学院
+    type: department
+    list_url: https://www.shsmu.edu.cn/tzgg.htm
+    base_url: https://www.shsmu.edu.cn
+    priority: 2
+
+  - name: 船舶海洋与建筑工程学院
+    type: department
+    list_url: https://naoce.sjtu.edu.cn/xwzx/tzgg.html
+    base_url: https://naoce.sjtu.edu.cn
+    priority: 2
+
+  - name: 生命科学技术学院
+    type: department
+    list_url: https://life.sjtu.edu.cn/tzgg.html
+    base_url: https://life.sjtu.edu.cn
+    priority: 3
+
+  - name: 农业与生物学院
+    type: department
+    list_url: https://agri.sjtu.edu.cn/tzgg.html
+    base_url: https://agri.sjtu.edu.cn
+    priority: 3
+
+  - name: 环境科学与工程学院
+    type: department
+    list_url: https://soee.sjtu.edu.cn/tzgg.html
+    base_url: https://soee.sjtu.edu.cn
+    priority: 3
+
+  - name: 人文学院
+    type: department
+    list_url: https://shss.sjtu.edu.cn/tzgg.html
+    base_url: https://shss.sjtu.edu.cn
+    priority: 3
+
+  - name: 媒体与传播学院
+    type: department
+    list_url: https://smc.sjtu.edu.cn/tzgg.html
+    base_url: https://smc.sjtu.edu.cn
+    priority: 3
+
+  - name: 设计学院
+    type: department
+    list_url: https://design.sjtu.edu.cn/tzgg.html
+    base_url: https://design.sjtu.edu.cn
+    priority: 3
+
+  - name: 国际与公共事务学院
+    type: department
+    list_url: https://sipa.sjtu.edu.cn/tzgg.html
+    base_url: https://sipa.sjtu.edu.cn
+    priority: 3
+
+  - name: 马克思主义学院
+    type: department
+    list_url: https://smy.sjtu.edu.cn/tzgg.html
+    base_url: https://smy.sjtu.edu.cn
+    priority: 3
+
+  - name: 体育系
+    type: department
+    list_url: https://tyx.sjtu.edu.cn/tzgg.html
+    base_url: https://tyx.sjtu.edu.cn
+    priority: 3
+
+  - name: 巴黎卓越工程师学院
+    type: department
+    list_url: https://speit.sjtu.edu.cn/tzgg.html
+    base_url: https://speit.sjtu.edu.cn
+    priority: 3
+
+  - name: 密西根学院
+    type: department
+    list_url: https://umji.sjtu.edu.cn/cn/news/
+    base_url: https://umji.sjtu.edu.cn
+    priority: 3
+
+  - name: 溥渊未来技术学院
+    type: department
+    list_url: https://siftt.sjtu.edu.cn/tzgg.html
+    base_url: https://siftt.sjtu.edu.cn
+    priority: 3
+
+  - name: 人工智能学院
+    type: department
+    list_url: https://scai.sjtu.edu.cn/tzgg
+    base_url: https://scai.sjtu.edu.cn
+    priority: 1
+
+  - name: 海洋学院
+    type: department
+    list_url: https://sose.sjtu.edu.cn/tzgg.html
+    base_url: https://sose.sjtu.edu.cn
+    priority: 3
+
+  - name: 文创学院
+    type: department
+    list_url: https://sci.sjtu.edu.cn/tzgg.html
+    base_url: https://sci.sjtu.edu.cn
+    priority: 3
+
+  # ============================================================
+  # Layer 3 — 公共平台
+  # ============================================================
+  - name: 学生创新中心
+    type: platform
+    list_url: https://si.sjtu.edu.cn/tzgg.html
+    base_url: https://si.sjtu.edu.cn
+    priority: 3
+
+  - name: 研究生会
+    type: platform
+    list_url: https://gsu.sjtu.edu.cn/tzgg.html
+    base_url: https://gsu.sjtu.edu.cn
+    priority: 3
+
+  - name: 学生会 (SJTU SU)
+    type: platform
+    list_url: https://sjtusu.sjtu.edu.cn/tzgg.html
+    base_url: https://sjtusu.sjtu.edu.cn
+    priority: 3
+
+  - name: 图书馆讲座
+    type: library
+    list_url: https://www.lib.sjtu.edu.cn/f/content/events
+    base_url: https://www.lib.sjtu.edu.cn
+    priority: 3
