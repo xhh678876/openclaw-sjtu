@@ -335,10 +335,41 @@ node scripts/shuiyuan_discourse.mjs auth finish --payload "<payload>"
 
 ---
 
+## 🧩 子 Skill（独立模块,有自己的 SKILL.md）
+
+主 `/sjtu` 覆盖日常 Canvas + 校园生活功能。下面这些是**独立成 skill 的进阶模块**,
+在 `skills/<name>/SKILL.md` 各自详述触发场景与命令:
+
+| Skill | 用途 | 入口 |
+|------|------|------|
+| [sjtu-deadlines](skills/sjtu-deadlines/SKILL.md) | 跨平台聚合 DDL(Canvas+phycai+icourse163+lcme) | `python3 -m scripts.unified_ddl` |
+| [sjtu-oneshot](skills/sjtu-oneshot/SKILL.md) | 一键 jAccount 登录 + 抓全部信息 | `python3 -m scripts.sjtu_oneshot` |
+| [sjtu-crawler](skills/sjtu-crawler/SKILL.md) | 全站门户爬虫 + Claude Opus 蒸馏 | `python3 scripts/sjtu_crawler.py crawl` |
+| [shuiyuan-rag-service](skills/shuiyuan-rag-service/SKILL.md) | 水源 RAG FastAPI 长跑服务(127.0.0.1:9111) | `uvicorn shuiyuan_rag_http:app` |
+| [sjtu-cookie-saver](skills/sjtu-cookie-saver/SKILL.md) | 手动登录 course.sjtu.plus / 传承交大 dump cookies | `python3 scripts/save_sjtu_cookies.py` |
+| [lobster-square](skills/lobster-square/SKILL.md) | clawsjtu.com 龙虾广场 API(独立项目,搭车存放) | `bash scripts/call.sh` |
+
+触发对照表(用户提到下列词时优先委派给子 skill):
+
+- "我有什么 DDL / 作业 / 实验" → **sjtu-deadlines**
+- "登录所有 SJTU 平台 / 刷新所有 cookies" → **sjtu-oneshot**
+- "爬交大网站 / 抓教务通知 / 蒸馏公告" → **sjtu-crawler**
+- "重启水源 RAG 服务 / shuiyuan-rag healthz" → **shuiyuan-rag-service**
+- "刷新选课社区 cookie / 传承交大重登" → **sjtu-cookie-saver**
+
+子 skill 共享的工具层(不单独成 skill,被多个 skill 调用):
+- `scripts/auth/` — jAccount SSO + cookie store + 系统 Chrome cookies 导入
+- `scripts/platforms/` — 各平台 HTTP/Playwright 适配器(被 sjtu-deadlines + sjtu-oneshot 共用)
+- `scripts/scheduler/` — macOS launchd 服务安装/卸载
+
 ## 依赖
 
 ```bash
 pip3 install requests beautifulsoup4 python-pptx pdfplumber handright Pillow reportlab
+# 子 skill 额外:
+pip3 install -r scripts/requirements-platforms.txt    # sjtu-deadlines / sjtu-oneshot
+playwright install chromium                           # sjtu-oneshot
+pip3 install fastapi uvicorn                          # shuiyuan-rag-service
 ```
 
 水源社区功能额外需要 Node.js（v18+）。
@@ -349,4 +380,5 @@ pip3 install requests beautifulsoup4 python-pptx pdfplumber handright Pillow rep
 2. Canvas Token 失效时需在 oc.sjtu.edu.cn → 设置 → 新建访问许可证 重新生成
 3. 选课社区受 CDN 反爬限制，推荐通过浏览器代理调用
 4. 食堂、教室等部分数据为硬编码，如有变动需更新脚本
+5. 子 skill 的命令行调用**密码不上 argv**;首次保存用 `--save-creds`,后续裸跑
 5. 校园巴士时刻表以学校最新通知为准
