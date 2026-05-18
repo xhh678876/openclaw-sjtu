@@ -56,12 +56,28 @@ class CookieStore:
 
     # ── 写 ──────────────────────────────────────────────────────────────────
     def save(self, cfg: dict) -> None:
+        """原子写入 config.json。
+
+        含明文密码/cookies,所以:
+          1) 写到同目录 .tmp(O_CREAT|O_WRONLY|O_TRUNC mode=0o600),保证从一开始
+             就是 600 权限,杜绝 write→chmod 之间的 0644 窗口
+          2) os.replace() 原子替换 —— 并发写不会损坏文件,中途崩溃也不会留下
+             半写状态的 config.json
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(cfg, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        # 权限收紧到 0600（含密码/token，防止他人读取）
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        fd = os.open(str(tmp), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
+        os.replace(tmp, self.path)
+        # 防御性:某些文件系统 os.replace 不保留 source mode
         try:
             os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
         except OSError:

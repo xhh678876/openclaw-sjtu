@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import abc
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -31,18 +32,18 @@ class DDLItem:
         }
 
 
-class BasePlatform:
-    """所有平台的统一接口。"""
+class BasePlatform(abc.ABC):
+    """所有平台的统一接口。子类必须实现 login() 和 list_ddls()。"""
 
     name: str = "base"
 
+    @abc.abstractmethod
     def login(self) -> bool:
         """触发 SSO 登录或确认 cookies 有效。返回 True 表示可继续 fetch。"""
-        raise NotImplementedError
 
+    @abc.abstractmethod
     def list_ddls(self) -> list[DDLItem]:
         """返回未来截止任务（已过期的应过滤）。"""
-        raise NotImplementedError
 
     def list_courses(self) -> list[dict]:
         """可选：返回已选课程列表。"""

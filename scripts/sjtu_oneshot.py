@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -177,7 +178,8 @@ def login_all(username: str, password: str, headless: bool = True,
             user_agent=chrome_ua,
             viewport={"width": 1440, "height": 900},
         )
-        browser = ctx.browser  # type: ignore
+        # 注:launch_persistent_context 返回的 ctx.browser 是 None,所以下面
+        # 关闭浏览器只能用 ctx.close() 不能 browser.close()
 
         # 注入种子 cookies（来自系统 Chrome）—— 关键：JATrustCookie 让 jAccount
         # 直接信任本会话，跳过 2FA 扫码。
@@ -261,7 +263,7 @@ def login_all(username: str, password: str, headless: bool = True,
 
         # 一次性收集所有 cookies
         updated = store.collect_from_playwright(ctx)
-        browser.close()
+        ctx.close()
 
     return {"results": results, "saved": updated}
 
@@ -392,7 +394,10 @@ def main():
         description="一键登录所有 SJTU 平台并拉取信息（课表/校历/物理实验/MOOC/Canvas）",
     )
     ap.add_argument("--user", "--username", dest="user", help="jAccount 用户名")
-    ap.add_argument("--pass", "--password", dest="pwd", help="jAccount 密码")
+    ap.add_argument(
+        "--pass", "--password", dest="pwd",
+        help="jAccount 密码 (⚠ argv 对 ps aux 可见;留空将以 getpass 交互式提示)",
+    )
     ap.add_argument("--save-creds", action="store_true",
                     help="把 --user/--pass 写入 config.json (0600) 后续无需再传")
     ap.add_argument("--show", action="store_true",
@@ -410,13 +415,24 @@ def main():
 
     store = CookieStore()
 
-    # 凭据来源：CLI > config.json > .env
+    # ⚠ 安全:密码走 --pass 会出现在 ps aux 输出里;提醒后续用 --save-creds
+    if args.pwd:
+        print("[warn] --pass 把密码暴露到 ps aux;建议先 --save-creds 一次,以后裸跑",
+              file=sys.stderr)
+
+    # 凭据来源:CLI > config.json > .env > 交互式 getpass
     username = args.user
     password = args.pwd
     if not username or not password:
         u, p = store.get_credentials()
         username = username or u
         password = password or p
+    # 仍然缺密码 → 仅当 stdin 是 tty 时交互式问一次
+    if username and not password and sys.stdin.isatty():
+        try:
+            password = getpass.getpass(f"jAccount password for {username}: ")
+        except (EOFError, KeyboardInterrupt):
+            password = None
 
     if args.save_creds:
         if not username or not password:

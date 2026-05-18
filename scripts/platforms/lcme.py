@@ -274,16 +274,31 @@ class LCMEPlatform(BasePlatform):
 def main():
     """CLI: python -m scripts.platforms.lcme [--reservations|--main]"""
     import argparse
+    import getpass
+    import sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--reservations", action="store_true", help="列出已预约实验")
     ap.add_argument("--main", action="store_true", help="dump 主页 HTML（调试用）")
     ap.add_argument("--user", help="设置 lcme 用户名")
-    ap.add_argument("--password", help="设置 lcme 密码")
+    ap.add_argument(
+        "--password",
+        help="设置 lcme 密码 (⚠ argv 对 ps aux 可见;留空将以 getpass 交互式提示)",
+    )
     args = ap.parse_args()
 
     p = LCMEPlatform()
-    if args.user and args.password:
-        p.set_credentials(args.user, args.password)
+    if args.user:
+        if args.password:
+            print("[warn] --password 把密码暴露到 ps aux;建议留空,交互式输入",
+                  file=sys.stderr)
+            pwd = args.password
+        elif sys.stdin.isatty():
+            pwd = getpass.getpass(f"lcme password for {args.user}: ")
+        else:
+            print("[错误] 非 tty 环境必须显式 --password,或直接编辑 config.json",
+                  file=sys.stderr)
+            sys.exit(1)
+        p.set_credentials(args.user, pwd)
         print(f"✓ 凭据已写入 {p.store.path}")
 
     if args.main:

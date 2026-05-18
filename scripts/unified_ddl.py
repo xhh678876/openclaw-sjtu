@@ -128,13 +128,25 @@ def fmt_json(items: list[DDLItem]) -> str:
     return json.dumps([i.to_dict() for i in items], ensure_ascii=False, indent=2)
 
 
+def _applescript_escape(s: str) -> str:
+    """转义 AppleScript 字符串字面量中的特殊字符。
+
+    title/body 来自外部抓取的平台数据(课程名/作业名),不转义可被注入
+    `do shell script` 等危险操作。详见 [security review C1]。
+    """
+    # 顺序很重要:先转义 \,再转义 "
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
 def macos_notify(title: str, body: str) -> None:
     if sys.platform != "darwin":
         return
+    safe_title = _applescript_escape(title)
+    safe_body = _applescript_escape(body)
     try:
         subprocess.run([
             "osascript", "-e",
-            f'display notification "{body}" with title "{title}"',
+            f'display notification "{safe_body}" with title "{safe_title}"',
         ], check=False, capture_output=True)
     except Exception:
         pass

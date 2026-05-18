@@ -52,10 +52,17 @@ def db_connect() -> sqlite3.Connection:
 
 
 def call_claude(prompt: str, timeout: int = 180) -> str:
-    """Invoke claude CLI, return raw text."""
+    """Invoke claude CLI, return raw text.
+
+    Prompt 走 stdin 而不是 argv:
+      - 避免 ARG_MAX(macOS ~256KB)截断大 prompt 导致静默失败
+      - 即使 shell=False 已经隔离 shell 注入,argv 路径仍不适合传 6KB+
+        的抓取内容,改 stdin 更稳。
+    """
     try:
         proc = subprocess.run(
-            ["claude", "-p", "--model", MODEL, prompt],
+            ["claude", "-p", "--model", MODEL],
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout,

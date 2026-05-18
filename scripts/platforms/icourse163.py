@@ -65,74 +65,77 @@ class ICourse163Platform(BasePlatform):
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(headless=True)
-                ctx = browser.new_context()
-                page = ctx.new_page()
-                page.goto("https://www.icourse163.org/", wait_until="networkidle",
-                          timeout=40_000)
-                page.wait_for_timeout(2000)
                 try:
-                    page.keyboard.press("Escape")
-                    page.wait_for_timeout(500)
-                except Exception:
-                    pass
-                page.get_by_text("登录", exact=False).first.click()
-                page.wait_for_selector(
-                    "iframe[src*='reg.icourse163.org'][src*='index_dl2']",
-                    timeout=15_000,
-                )
-                page.wait_for_timeout(1000)
-
-                login_frame = None
-                for frame in page.frames:
-                    if "reg.icourse163.org" in frame.url and "index_dl2" in frame.url:
-                        if frame.locator("input[type='password']").count() > 0:
-                            login_frame = frame
-                            break
-                if login_frame is None:
-                    print("[icourse163] 未找到登录 iframe")
+                    return self._do_login(browser, username, password)
+                finally:
+                    # 不论哪条 early-return 分支退出,浏览器始终关闭
                     browser.close()
-                    return None
-
-                txt_inputs = login_frame.locator(
-                    "input[type='text'], input[type='tel']"
-                ).all()
-                txt_field = next((i for i in txt_inputs if i.is_visible()), None)
-                if not txt_field:
-                    browser.close()
-                    return None
-                txt_field.fill(username)
-                pwd_inputs = login_frame.locator("input[type='password']").all()
-                pwd_field = next((i for i in pwd_inputs if i.is_visible()), None)
-                if not pwd_field:
-                    browser.close()
-                    return None
-                pwd_field.fill(password)
-                login_frame.get_by_text("登 录", exact=True).click()
-
-                try:
-                    page.wait_for_function(
-                        "() => !document.querySelector('iframe[src*=\"reg.icourse163.org\"]')",
-                        timeout=20_000,
-                    )
-                except Exception:
-                    pass
-                page.wait_for_timeout(2000)
-
-                new_cookies = {
-                    c["name"]: c["value"]
-                    for c in ctx.cookies()
-                    if "icourse163.org" in c.get("domain", "")
-                }
-                browser.close()
-                if not new_cookies.get("NTESSTUDYSI"):
-                    print("[icourse163] 登录失败")
-                    return None
-                self.store.set_cookies("icourse_cookies", new_cookies)
-                print("[icourse163] ✓ 登录成功，cookies 已保存")
-                return new_cookies
         except Exception as e:
             print(f"[icourse163] 登录出错：{e}")
             return None
+
+    def _do_login(self, browser, username: str, password: str) -> dict | None:
+        ctx = browser.new_context()
+        page = ctx.new_page()
+        page.goto("https://www.icourse163.org/", wait_until="networkidle",
+                  timeout=40_000)
+        page.wait_for_timeout(2000)
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
+        page.get_by_text("登录", exact=False).first.click()
+        page.wait_for_selector(
+            "iframe[src*='reg.icourse163.org'][src*='index_dl2']",
+            timeout=15_000,
+        )
+        page.wait_for_timeout(1000)
+
+        login_frame = None
+        for frame in page.frames:
+            if "reg.icourse163.org" in frame.url and "index_dl2" in frame.url:
+                if frame.locator("input[type='password']").count() > 0:
+                    login_frame = frame
+                    break
+        if login_frame is None:
+            print("[icourse163] 未找到登录 iframe")
+            return None
+
+        txt_inputs = login_frame.locator(
+            "input[type='text'], input[type='tel']"
+        ).all()
+        txt_field = next((i for i in txt_inputs if i.is_visible()), None)
+        if not txt_field:
+            return None
+        txt_field.fill(username)
+        pwd_inputs = login_frame.locator("input[type='password']").all()
+        pwd_field = next((i for i in pwd_inputs if i.is_visible()), None)
+        if not pwd_field:
+            return None
+        pwd_field.fill(password)
+        login_frame.get_by_text("登 录", exact=True).click()
+
+        try:
+            page.wait_for_function(
+                "() => !document.querySelector('iframe[src*=\"reg.icourse163.org\"]')",
+                timeout=20_000,
+            )
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+
+        new_cookies = {
+            c["name"]: c["value"]
+            for c in ctx.cookies()
+            if "icourse163.org" in c.get("domain", "")
+        }
+        if not new_cookies.get("NTESSTUDYSI"):
+            print("[icourse163] 登录失败")
+            return None
+        self.store.set_cookies("icourse_cookies", new_cookies)
+        print("[icourse163] ✓ 登录成功，cookies 已保存")
+        return new_cookies
 
     # ── 抓 ddl ──────────────────────────────────────────────────────────────
     def list_ddls(self) -> list[DDLItem]:
