@@ -10,6 +10,7 @@ dist/
 build/
 venv/
 .venv/
+.pytest_cache/
 
 # 环境变量
 .env
