@@ -1,0 +1,11 @@
+# 多平台抽象层依赖（scripts/platforms/, scripts/auth/）
+# 安装：pip install -r scripts/requirements-platforms.txt && playwright install chromium
+
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+playwright>=1.40
+python-dotenv>=1.0
+Pillow>=10.0          # 验证码图片缩放
+anthropic>=0.40       # 可选：Claude Haiku 验证码兜底
+browser-cookie3>=0.19 # 从系统浏览器偷 cookies（绕过 2FA 的关键）

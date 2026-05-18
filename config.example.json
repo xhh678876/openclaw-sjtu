@@ -21,5 +21,29 @@
   "course_sjtu_cookie": "",
 
   "shuiyuan_user_api_key": "",
-  "shuiyuan_user_api_client_id": ""
+  "shuiyuan_user_api_client_id": "",
+
+  "_comment_platforms": "以下字段由 scripts/auth/jaccount.py 自动登录后写入，不要手填",
+  "jaccount_username": "",
+  "jaccount_password": "",
+  "jaccount_cookies": {},
+  "phycai_cookies": {},
+  "i_sjtu_cookies": {},
+  "calendar_cookies": {},
+  "lcme_cookies": {},
+  "icourse_cookies": {},
+
+  "_comment_lcme": "lcme.sjtu.edu.cn/openlab 用独立账号（非 jAccount SSO）。如果密码同 jAccount 可以留空，会自动 fallback。否则填这里：",
+  "lcme_username": "",
+  "lcme_password": "",
+
+
+  "_comment_icourse_courses": "中国大学MOOC 课程列表。term_id 在课程 URL ?tid= 后",
+  "icourse_courses": [
+    {
+      "name": "示例课程",
+      "term_id": 1476751568,
+      "course_id": "SJTU-1449794172"
+    }
+  ]
 }
