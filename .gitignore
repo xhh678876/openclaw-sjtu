@@ -26,6 +26,14 @@ Thumbs.db
 *.ics
 sjtu_probe_results.json
 
+# 爬虫与平台抽象层运行时产物（用户数据，不入 git）
+# data/sjtu_sites.yaml 是种子配置，需要提交；其余子目录是抓取/蒸馏产物
+data/raw/
+data/distilled/
+data/playwright_profile/
+data/sjtu_kb.db
+data/sjtu_calendar.json
+
 # 水源 RAG 抓取数据与向量库（含用户内容，不入 git）
 scripts/shuiyuan_data/
 scripts/shuiyuan_kb/
