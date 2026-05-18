@@ -28,6 +28,7 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import requests
 
@@ -147,7 +148,7 @@ class JAccountLogin:
             )
 
     @contextmanager
-    def session(self):
+    def session(self) -> Iterator["BrowserContext"]:
         """启动 Playwright，yield BrowserContext。退出时自动关闭。"""
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=self.headless)

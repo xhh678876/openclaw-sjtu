@@ -193,7 +193,13 @@ class LCMEPlatform(BasePlatform):
         return []
 
     @staticmethod
-    def _parse_reservation_table(html: str) -> list[dict]:
+    def _cell(cells: list[str], col: dict[str, int], k: str) -> str:
+        """从已分割的行 cells 里按列名 k 取值,越界/缺失返回空串。"""
+        i = col.get(k)
+        return cells[i] if i is not None and i < len(cells) else ""
+
+    @classmethod
+    def _parse_reservation_table(cls, html: str) -> list[dict]:
         """通用表格解析：找最大表格，按表头映射常见列。"""
         soup = BeautifulSoup(html, "lxml")
         tables = soup.find_all("table")
@@ -225,16 +231,13 @@ class LCMEPlatform(BasePlatform):
             cells = [c.get_text(strip=True) for c in row.find_all("td")]
             if not cells:
                 continue
-            def get(k):
-                i = col.get(k)
-                return cells[i] if i is not None and i < len(cells) else ""
             out.append({
-                "name":   get("name"),
-                "date":   get("date"),
-                "time":   get("time"),
-                "room":   get("room"),
-                "course": get("course"),
-                "status": get("status"),
+                "name":   cls._cell(cells, col, "name"),
+                "date":   cls._cell(cells, col, "date"),
+                "time":   cls._cell(cells, col, "time"),
+                "room":   cls._cell(cells, col, "room"),
+                "course": cls._cell(cells, col, "course"),
+                "status": cls._cell(cells, col, "status"),
             })
         return out
 

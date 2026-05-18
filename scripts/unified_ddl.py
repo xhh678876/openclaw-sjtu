@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -22,29 +23,31 @@ from typing import Iterable
 from scripts.platforms import DDLItem
 from scripts.platforms.base import CST
 
+log = logging.getLogger("unified_ddl")
 
-def _platforms(skip: Iterable[str] = ()):
+
+def _platforms(skip: Iterable[str] = ()) -> list[tuple[str, object]]:
     """惰性加载：避免一个平台 import 失败拖累全局。"""
     skip = set(skip)
-    out = []
+    out: list[tuple[str, object]] = []
     if "phycai" not in skip:
         try:
             from scripts.platforms.phycai import PhyCaiPlatform
             out.append(("phycai", PhyCaiPlatform()))
         except ImportError as e:
-            print(f"[skip] phycai: {e}")
+            log.info("skip phycai: %s", e)
     if "icourse163" not in skip:
         try:
             from scripts.platforms.icourse163 import ICourse163Platform
             out.append(("icourse163", ICourse163Platform()))
         except ImportError as e:
-            print(f"[skip] icourse163: {e}")
+            log.info("skip icourse163: %s", e)
     if "lcme" not in skip:
         try:
             from scripts.platforms.lcme import LCMEPlatform
             out.append(("lcme", LCMEPlatform()))
         except ImportError as e:
-            print(f"[skip] lcme: {e}")
+            log.info("skip lcme: %s", e)
     if "canvas" not in skip:
         # 尝试桥接现有 canvas_api.py（如果有 list_ddls 接口）
         try:
@@ -67,9 +70,9 @@ class _CanvasAdapter:
         try:
             raw = _list()
         except Exception as e:
-            print(f"[canvas] 抓取失败：{e}")
+            log.warning("canvas 抓取失败: %s", e)
             return []
-        out = []
+        out: list[DDLItem] = []
         for r in raw or []:
             try:
                 due = r["due"] if isinstance(r["due"], datetime) \
@@ -83,7 +86,8 @@ class _CanvasAdapter:
                     due=due,
                     submitted=bool(r.get("submitted")),
                 ))
-            except Exception:
+            except Exception as e:
+                log.debug("canvas item 解析失败,skipped: %s (item=%r)", e, r)
                 continue
         return out
 
@@ -94,7 +98,7 @@ def collect_all(skip: Iterable[str] = ()) -> list[DDLItem]:
         try:
             items.extend(p.list_ddls())
         except Exception as e:
-            print(f"[{name}] 抓取出错：{e}")
+            log.warning("%s 抓取出错: %s", name, e)
     items.sort(key=lambda x: x.due)
     return items
 
@@ -169,7 +173,11 @@ def remind_check(items: list[DDLItem], window_min: int = 70) -> int:
 
 # ── 入口 ─────────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
     ap = argparse.ArgumentParser(description="统一拉取所有 SJTU 平台的截止任务")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
     ap.add_argument("--notify", action="store_true",
@@ -185,7 +193,7 @@ def main():
 
     if args.remind_check:
         n = remind_check(items)
-        print(f"[remind] 通知 {n} 条")
+        log.info("remind 通知 %d 条", n)
         return
 
     if args.json:

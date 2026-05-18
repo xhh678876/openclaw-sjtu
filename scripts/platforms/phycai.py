@@ -79,6 +79,12 @@ class PhyCaiPlatform(BasePlatform):
         return self._parse_table(html)
 
     # ── HTML 解析 ───────────────────────────────────────────────────────────
+    @staticmethod
+    def _cell(cells: list[str], col: dict[str, int], k: str) -> str:
+        """从已分割的行 cells 里按列名 k 取值,越界/缺失返回空串。"""
+        i = col.get(k)
+        return cells[i] if i is not None and i < len(cells) else ""
+
     def _parse_table(self, html: str) -> list[DDLItem]:
         soup = BeautifulSoup(html, "lxml")
         tables = soup.find_all("table")
@@ -109,13 +115,8 @@ class PhyCaiPlatform(BasePlatform):
             cells = [c.get_text(strip=True) for c in row.find_all("td")]
             if not cells:
                 continue
-
-            def cell(k):
-                i = col.get(k)
-                return cells[i] if i is not None and i < len(cells) else ""
-
-            date_str = cell("date")
-            time_str = cell("time")
+            date_str = self._cell(cells, col, "date")
+            time_str = self._cell(cells, col, "time")
             m = re.search(r"\d{1,2}:\d{2}", time_str)
             time_start = m.group() if m else ""
             dt = self._parse_dt(date_str, time_start)
@@ -123,9 +124,9 @@ class PhyCaiPlatform(BasePlatform):
                 out.append(DDLItem(
                     platform="phycai",
                     course="物理实验",
-                    name=cell("name"),
+                    name=self._cell(cells, col, "name"),
                     due=dt,
-                    location=cell("room"),
+                    location=self._cell(cells, col, "room"),
                     extra={"time_str": time_str},
                 ))
         out.sort(key=lambda x: x.due)

@@ -44,16 +44,21 @@ import shuiyuan_rag_mcp as srm  # noqa: E402
 log = logging.getLogger("shuiyuan_rag_http")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+# 启动 lifespan 跑完后置 True;/healthz 用它代替之前侵入式访问 srm._embed_model
+_models_loaded = False
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """启动时预加载 embed + reranker，让首个真实请求就快。"""
+    global _models_loaded
     log.info("⏳ preloading BGEM3 embedding + reranker (一次性 ~30s)...")
     try:
         srm.get_db()
         srm.get_embed_model()
         # reranker 是 lazy 的，但提前 warm 一下让首请更顺
         srm.get_reranker()
+        _models_loaded = True
         log.info("✅ shuiyuan-rag HTTP 服务就绪 — 监听 127.0.0.1:9111")
     except Exception:  # noqa: BLE001
         log.exception("预加载失败（服务会继续起来，单次请求时会再试）")
@@ -95,14 +100,12 @@ class SearchResp(BaseModel):
 
 @app.get("/healthz")
 async def healthz() -> dict:
-    """健康检查 — 顺便报模型是否已加载。"""
-    return {
-        "ok": True,
-        "kb_path": os.environ.get("SHUIYUAN_KB_PATH"),
-        "embed_loaded": srm._embed_model is not None  # noqa: SLF001
-        if hasattr(srm, "_embed_model")
-        else "unknown",
-    }
+    """健康检查 — 报告启动 lifespan 是否完成。
+
+    不暴露 SHUIYUAN_KB_PATH(绝对文件路径) —— 即便绑 127.0.0.1,localhost
+    fetch 也能拿到,没必要泄露。
+    """
+    return {"ok": True, "ready": _models_loaded}
 
 
 @app.post("/search", response_model=SearchResp)
@@ -169,5 +172,6 @@ async def stats() -> dict:
             if "category" in df.columns
             else {},
         }
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(500, str(e))
+    except Exception:  # noqa: BLE001
+        log.exception("stats 失败")
+        raise HTTPException(500, "stats unavailable")

@@ -15,14 +15,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sqlite3
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "sjtu_kb.db"
+
+log = logging.getLogger("sjtu_distill")
 
 MODEL = "claude-opus-4-6"
 
@@ -47,8 +52,14 @@ PROMPT_TMPL = """你是交大公告蒸馏器。请把下面一条公告正文提
 """
 
 
-def db_connect() -> sqlite3.Connection:
-    return sqlite3.connect(DB_PATH)
+@contextmanager
+def db_connect() -> Iterator[sqlite3.Connection]:
+    """SQLite 连接 context manager,确保 conn.close() 总被调用。"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def call_claude(prompt: str, timeout: int = 180) -> str:
@@ -102,72 +113,73 @@ def distill_one(row: tuple) -> dict | None:
         return None
     data = extract_json(raw)
     if not data:
-        print(f"  [parse-fail] doc {doc_id}: {raw[:120]}", file=sys.stderr)
+        log.warning("parse-fail doc %s: %s", doc_id, raw[:120])
         return None
     return data
 
 
-def cmd_run(args):
-    conn = db_connect()
-    cur = conn.cursor()
-    q = "SELECT id, site_name, url, title, content FROM documents WHERE distilled=0"
-    params: list = []
-    if args.site:
-        q += " AND site_name=?"
-        params.append(args.site)
-    q += " ORDER BY id DESC LIMIT ?"
-    params.append(args.limit)
-    cur.execute(q, params)
-    rows = cur.fetchall()
-    print(f"Distilling {len(rows)} doc(s) with {MODEL} ...")
+def cmd_run(args) -> None:
+    with db_connect() as conn:
+        cur = conn.cursor()
+        q = "SELECT id, site_name, url, title, content FROM documents WHERE distilled=0"
+        params: list = []
+        if args.site:
+            q += " AND site_name=?"
+            params.append(args.site)
+        q += " ORDER BY id DESC LIMIT ?"
+        params.append(args.limit)
+        cur.execute(q, params)
+        rows = cur.fetchall()
+        log.info("Distilling %d doc(s) with %s ...", len(rows), MODEL)
 
-    for row in rows:
-        doc_id, site_name, url, title, _ = row
-        print(f"\n[{doc_id}] {site_name} :: {title[:60]}")
-        data = distill_one(row)
-        if not data:
-            continue
-        if data.get("summary") == "SKIP":
-            cur.execute("UPDATE documents SET distilled=2 WHERE id=?", (doc_id,))
+        for row in rows:
+            doc_id, site_name, url, title, _ = row
+            log.info("[%s] %s :: %s", doc_id, site_name, (title or "")[:60])
+            data = distill_one(row)
+            if not data:
+                continue
+            if data.get("summary") == "SKIP":
+                cur.execute("UPDATE documents SET distilled=2 WHERE id=?", (doc_id,))
+                conn.commit()
+                log.info("    skipped (empty/nav)")
+                continue
+            cur.execute(
+                """INSERT OR REPLACE INTO distilled
+                   (doc_id, category, audience, deadline, action_required,
+                    summary, tags, model, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    doc_id,
+                    data.get("category", ""),
+                    data.get("audience", ""),
+                    data.get("deadline", ""),
+                    1 if data.get("action_required") else 0,
+                    data.get("summary", ""),
+                    json.dumps(data.get("tags", []), ensure_ascii=False),
+                    MODEL,
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+            cur.execute("UPDATE documents SET distilled=1 WHERE id=?", (doc_id,))
             conn.commit()
-            print("    skipped (empty/nav)")
-            continue
+            log.info("    [%s] %s", data.get("category"),
+                     (data.get("summary") or "")[:80])
+
+    log.info("Done.")
+
+
+def cmd_show(args) -> None:
+    with db_connect() as conn:
+        cur = conn.cursor()
         cur.execute(
-            """INSERT OR REPLACE INTO distilled
-               (doc_id, category, audience, deadline, action_required,
-                summary, tags, model, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                doc_id,
-                data.get("category", ""),
-                data.get("audience", ""),
-                data.get("deadline", ""),
-                1 if data.get("action_required") else 0,
-                data.get("summary", ""),
-                json.dumps(data.get("tags", []), ensure_ascii=False),
-                MODEL,
-                datetime.now().isoformat(timespec="seconds"),
-            ),
+            """SELECT d.site_name, d.title, d.url, d.published_at,
+                      x.category, x.audience, x.deadline, x.action_required,
+                      x.summary, x.tags
+               FROM documents d LEFT JOIN distilled x ON d.id=x.doc_id
+               WHERE d.id=?""",
+            (args.doc_id,),
         )
-        cur.execute("UPDATE documents SET distilled=1 WHERE id=?", (doc_id,))
-        conn.commit()
-        print(f"    [{data.get('category')}] {data.get('summary','')[:80]}")
-
-    print("\nDone.")
-
-
-def cmd_show(args):
-    conn = db_connect()
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT d.site_name, d.title, d.url, d.published_at,
-                  x.category, x.audience, x.deadline, x.action_required,
-                  x.summary, x.tags
-           FROM documents d LEFT JOIN distilled x ON d.id=x.doc_id
-           WHERE d.id=?""",
-        (args.doc_id,),
-    )
-    row = cur.fetchone()
+        row = cur.fetchone()
     if not row:
         print("not found")
         return
@@ -184,16 +196,17 @@ def cmd_show(args):
     print(f"\nSummary:\n{summ}")
 
 
-def cmd_list(args):
-    conn = db_connect()
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT d.id, d.site_name, d.title, x.category, x.deadline, x.summary
-           FROM documents d JOIN distilled x ON d.id=x.doc_id
-           ORDER BY d.id DESC LIMIT ?""",
-        (args.limit,),
-    )
-    for row in cur.fetchall():
+def cmd_list(args) -> None:
+    with db_connect() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT d.id, d.site_name, d.title, x.category, x.deadline, x.summary
+               FROM documents d JOIN distilled x ON d.id=x.doc_id
+               ORDER BY d.id DESC LIMIT ?""",
+            (args.limit,),
+        )
+        rows = cur.fetchall()
+    for row in rows:
         did, site, title, cat, dl, summ = row
         print(f"[{did}] ({cat}) {site} :: {title[:50]}")
         if dl:
@@ -202,16 +215,20 @@ def cmd_list(args):
         print()
 
 
-def main():
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run")
-    r.add_argument("--limit", type=int, default=5)
-    r.add_argument("--site", type=str, default=None)
-    s = sub.add_parser("show")
-    s.add_argument("doc_id", type=int)
-    l = sub.add_parser("list")
-    l.add_argument("--limit", type=int, default=20)
+    run_parser = sub.add_parser("run")
+    run_parser.add_argument("--limit", type=int, default=5)
+    run_parser.add_argument("--site", type=str, default=None)
+    show_parser = sub.add_parser("show")
+    show_parser.add_argument("doc_id", type=int)
+    list_parser = sub.add_parser("list")
+    list_parser.add_argument("--limit", type=int, default=20)
     args = ap.parse_args()
     {"run": cmd_run, "show": cmd_show, "list": cmd_list}[args.cmd](args)
 

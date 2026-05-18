@@ -25,10 +25,11 @@ import re
 import sqlite3
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -86,11 +87,16 @@ CREATE TABLE IF NOT EXISTS distilled (
 """
 
 
-def db_connect() -> sqlite3.Connection:
+@contextmanager
+def db_connect() -> Iterator[sqlite3.Connection]:
+    """SQLite 连接 context manager,确保 conn.close() 总被调用。"""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 # ============================================================
@@ -249,11 +255,20 @@ def parse_detail(html: str, site: Site) -> str:
 # ============================================================
 
 def archive_raw(url: str, html: str) -> str:
+    """归档抓到的原始 HTML。
+
+    chmod 0o600 —— scraped 内容可能含校内门户上的个人信息(姓名/邮件等),
+    不应让同机器其它用户读到。
+    """
     domain = urlparse(url).netloc
     h = hashlib.sha1(url.encode()).hexdigest()[:16]
     p = RAW_DIR / domain / f"{h}.html"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(html, encoding="utf-8")
+    try:
+        p.chmod(0o600)
+    except OSError:
+        pass
     return str(p.relative_to(ROOT))
 
 
@@ -280,6 +295,13 @@ def crawl_site(site: Site, limit: int, conn: sqlite3.Connection) -> tuple[int, i
         if len(content) < 40:
             continue
         content_hash = hashlib.sha1(content.encode()).hexdigest()
+        # 二级去重:相同 content_hash 出现在不同 URL(canonical 漂移、镜像站)
+        cur.execute(
+            "SELECT 1 FROM documents WHERE content_hash=? LIMIT 1",
+            (content_hash,),
+        )
+        if cur.fetchone():
+            continue
         raw_path = archive_raw(it["url"], detail_html)
         cur.execute(
             """INSERT OR IGNORE INTO documents
@@ -302,33 +324,36 @@ def crawl_site(site: Site, limit: int, conn: sqlite3.Connection) -> tuple[int, i
 # CLI
 # ============================================================
 
-def cmd_list():
+def cmd_list() -> None:
     for s in load_sites():
         print(f"  [{s.priority}] {s.type:10s}  {s.name:30s}  {s.list_url}")
 
 
-def cmd_crawl(args):
+def cmd_crawl(args) -> None:
     sites = load_sites()
     if args.site:
         sites = [s for s in sites if s.name == args.site]
     sites = [s for s in sites if s.priority <= args.priority]
     print(f"Crawling {len(sites)} site(s), limit={args.limit}/site")
-    conn = db_connect()
     total_new = 0
-    for s in sites:
-        try:
-            _, new = crawl_site(s, args.limit, conn)
-            total_new += new
-        except Exception as e:
-            print(f"    [err] {e}", file=sys.stderr)
+    with db_connect() as conn:
+        for s in sites:
+            try:
+                _, new = crawl_site(s, args.limit, conn)
+                total_new += new
+            except Exception as e:
+                print(f"    [err] {e}", file=sys.stderr)
     print(f"\nTotal new documents: {total_new}")
 
 
-def cmd_stats():
-    conn = db_connect()
-    cur = conn.cursor()
-    cur.execute("SELECT site_name, COUNT(*), SUM(distilled) FROM documents GROUP BY site_name")
-    rows = cur.fetchall()
+def cmd_stats() -> None:
+    with db_connect() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT site_name, COUNT(*), SUM(distilled) "
+            "FROM documents GROUP BY site_name"
+        )
+        rows = cur.fetchall()
     total = 0
     total_d = 0
     for name, cnt, dcnt in rows:
