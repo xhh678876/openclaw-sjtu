@@ -37,6 +37,8 @@ ALLOWED_READ_PREFIXES = (
     "/latest.json",
     "/search.json",
     "/filter.json",
+    "/categories.json",
+    "/c/",
     "/t/",
     "/posts/",
 )
