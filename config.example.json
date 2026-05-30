@@ -18,6 +18,12 @@
   "sjtu_username": "YOUR_JACCOUNT_USERNAME",
   "sjtu_password": "YOUR_JACCOUNT_PASSWORD",
 
+  "_comment_jcourse": "选课社区(jCourse)开放API Key。登录 course.sjtu.plus → 个人中心 → API 密钥",
+  "jcourse_api_key": "YOUR_JCOURSE_API_KEY",
+
+  "_comment_dyweb": "传承交大(beta.share.dyweb.sjtu.cn) token。jAccount 登录后抓: python3 scripts/save_sjtu_cookies.py legacy",
+  "dyweb_token": "",
+
   "course_sjtu_cookie": "",
 
   "shuiyuan_user_api_key": "",

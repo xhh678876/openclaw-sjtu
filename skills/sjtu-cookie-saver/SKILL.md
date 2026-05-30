@@ -1,6 +1,6 @@
 ---
 name: sjtu-cookie-saver
-description: 半交互式手动抓取 SJTU 第三方站(course.sjtu.plus 选课社区、share.dyweb.sjtu.cn 传承交大)的登录 cookies。打开 Chromium → 用户在浏览器里登 jAccount → 回车后脚本 dump cookies 到本地 JSON,gateway/后端复用。当用户说"刷新选课社区 cookie"、"传承交大重登"、"course.sjtu.plus 登不上"、"save_sjtu_cookies"时使用。
+description: 半交互式手动抓取传承交大(beta.share.dyweb.sjtu.cn)的登录态。打开 Chromium → 用户在浏览器里登 jAccount → 回车后脚本 dump cookies + 抓 localStorage token 到本地 JSON 供脚本复用。当用户说"传承交大重登"、"刷新传承 token"、"传承登不上"、"save_sjtu_cookies"时使用。注：选课社区已改用开放 API key，不再需要抓 cookie。
 ---
 
 # SJTU 第三方站 Cookie 抓取
@@ -9,27 +9,25 @@ description: 半交互式手动抓取 SJTU 第三方站(course.sjtu.plus 选课�
 
 ## 何时用
 
-- `course.sjtu.plus`(选课社区,Course Review)
-- `share.dyweb.sjtu.cn`(传承交大,试卷/资料分享)
+- `beta.share.dyweb.sjtu.cn`(传承交大,试卷/资料分享)—— 强制 jAccount 登录,无免登录接口,需抓 token
 - 其他**不在 sjtu-oneshot 自动平台列表里**的站点
 
-这些站点要么不走 jAccount SSO,要么走但前后处理特殊,不适合塞进 `sjtu_oneshot` 的标准 SSO 流程。
+> 注:**选课社区 course.sjtu.plus 已改用开放 API key**(在 config.json 填 `jcourse_api_key`),
+> 不再需要抓 cookie。`course` 参数保留仅作兼容。
 
 不该用的情形:
+- 选课社区课评 → 直接配 `jcourse_api_key`,用 `scripts/sjtu_course_review.py`
 - jAccount SSO 标准站(i.sjtu / calendar / phycai / lcme) → [sjtu-oneshot](../sjtu-oneshot/SKILL.md)
 - 想用 Chrome 已有的 cookies → 直接用 `scripts/auth/chrome_cookies.py`,不用手动登
 
 ## Usage
 
 ```bash
-# 默认抓全部
-~/openclaw-sjtu/.venv/bin/python ~/openclaw-sjtu/scripts/save_sjtu_cookies.py
-
-# 只抓选课社区
-~/openclaw-sjtu/.venv/bin/python ~/openclaw-sjtu/scripts/save_sjtu_cookies.py course
-
-# 只抓传承交大
+# 抓传承交大 token（推荐）
 ~/openclaw-sjtu/.venv/bin/python ~/openclaw-sjtu/scripts/save_sjtu_cookies.py legacy
+
+# 默认抓全部（course 项仅兼容保留）
+~/openclaw-sjtu/.venv/bin/python ~/openclaw-sjtu/scripts/save_sjtu_cookies.py
 ```
 
 ## 流程
@@ -37,8 +35,8 @@ description: 半交互式手动抓取 SJTU 第三方站(course.sjtu.plus 选课�
 1. 自动开 Chromium 窗口
 2. 你点登录 → jAccount 输账号密码 / 扫码
 3. 登录完成后**回到终端按回车**
-4. 脚本 dump cookies 到 `~/.openclaw/skills-data/sjtu-credentials/<site>.json`(0600)
-5. `scripts/sjtu_course_review.py` / `sjtu_legacy.py` 后续读这俩 JSON 调 API
+4. 脚本 dump cookies **+ 抓 localStorage 的 token** 到 `~/.openclaw/skills-data/sjtu-credentials/<site>.json`(0600)
+5. `scripts/sjtu_legacy.py` 后续读 `share-dyweb-sjtu-cn.json` 的 `token` 字段调 API（`Auth` header）
 
 ## Cookie 存放
 

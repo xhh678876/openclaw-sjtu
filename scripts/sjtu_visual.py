@@ -1,297 +1,253 @@
 #!/usr/bin/env python3
-"""
-视觉交大素材下载工具
-目标: https://vs.sjtu.edu.cn
-功能: 浏览相册、搜索照片
-注意: 该网站可能需要 jAccount 登录或使用 JS 渲染
-"""
+"""视觉交大 (vs.sjtu.edu.cn/jtdx) — 校园官方图库
 
-import sys
-import re
+站点是传统 jQuery 站（非 SPA/WP）。首页列出主题相册（themeId + 名称 + 图片数），
+图片列表走 AJAX 接口 POST /jtdx/index/images2。公开浏览/下载，无需登录。
+
+命令:
+  themes [--json]              列出主题相册（南洋筑韵/SJTU SCENE/航拍/运动交大…）
+  images <themeId> [n] [--json] 列某主题的图片（含原图直链、尺寸、下载数）
+  search <关键词> [n] [--json]  全站按关键词搜图
+  download <imageId> [路径]     下载单张原图（需先 images/search 拿到 imageId）
+
+实测接口（2026-05）:
+  GET  /jtdx/index                            首页(主题列表)
+  POST /jtdx/index/images2?type=1&pageSize=&pageNo=   body: themeId,tagId,searchContent
+       -> {code:"0000", imageList:[{id,name,photoer,imageUrl,imageWidth,downloadNum,...}]}
+  图片直链 = https://vs.sjtu.edu.cn/jtdx + imageUrl(反斜杠转/)
+"""
+from __future__ import annotations
+
 import json
-from typing import Optional
+import re
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
-import requests
-from bs4 import BeautifulSoup
-
-# ============================================================
-# 常量
-# ============================================================
-
-TIMEOUT = 10
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
-VS_URL = "https://vs.sjtu.edu.cn"
-
-# 硬编码相册信息 (基于视觉交大已知内容)
-FALLBACK_ALBUMS = [
-    {
-        "name": "南洋筑韵",
-        "desc": "交大建筑风光，校园标志性建筑",
-        "url": f"{VS_URL}",
-        "tags": ["建筑", "校园", "风光"],
-    },
-    {
-        "name": "交大映画",
-        "desc": "校园纪实摄影，师生活动",
-        "url": f"{VS_URL}",
-        "tags": ["纪实", "活动", "师生"],
-    },
-    {
-        "name": "航拍交大",
-        "desc": "无人机航拍校园全景",
-        "url": f"{VS_URL}",
-        "tags": ["航拍", "全景", "鸟瞰"],
-    },
-    {
-        "name": "四季交大",
-        "desc": "春夏秋冬四季校园风光",
-        "url": f"{VS_URL}",
-        "tags": ["四季", "风光", "季节"],
-    },
-    {
-        "name": "交大夜景",
-        "desc": "校园夜景灯光",
-        "url": f"{VS_URL}",
-        "tags": ["夜景", "灯光", "夜晚"],
-    },
-    {
-        "name": "毕业季",
-        "desc": "毕业典礼及毕业照",
-        "url": f"{VS_URL}",
-        "tags": ["毕业", "典礼", "学位服"],
-    },
-    {
-        "name": "图书馆",
-        "desc": "图书馆内外景",
-        "url": f"{VS_URL}",
-        "tags": ["图书馆", "阅读", "学习"],
-    },
-    {
-        "name": "体育赛事",
-        "desc": "校内体育比赛及运动场景",
-        "url": f"{VS_URL}",
-        "tags": ["体育", "比赛", "运动"],
-    },
-    {
-        "name": "实验室",
-        "desc": "科研实验室及科技成果",
-        "url": f"{VS_URL}",
-        "tags": ["实验室", "科研", "科技"],
-    },
-    {
-        "name": "校史影像",
-        "desc": "交大历史老照片及校史资料",
-        "url": f"{VS_URL}",
-        "tags": ["校史", "历史", "老照片"],
-    },
-]
+BASE = "https://vs.sjtu.edu.cn/jtdx"
+HOME = f"{BASE}/index"
+IMAGES_API = f"{BASE}/index/images2"
+TIMEOUT = 20
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
 
-# ============================================================
-# 相册列表
-# ============================================================
+class VisualError(Exception):
+    """视觉交大接口调用失败。"""
 
-def list_albums() -> list[dict]:
-    """列出所有相册"""
+
+def _get(url: str) -> str:
+    req = Request(url, headers={"User-Agent": UA})
     try:
-        resp = requests.get(VS_URL, headers=HEADERS, timeout=TIMEOUT, allow_redirects=True)
-
-        # 检测是否跳转到 jAccount 登录
-        if "jaccount" in resp.url.lower() or "login" in resp.url.lower():
-            print("⚠️ 视觉交大需要 jAccount 登录，使用硬编码数据", file=sys.stderr)
-            return FALLBACK_ALBUMS
-
-        resp.encoding = resp.apparent_encoding or "utf-8"
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # 尝试提取相册列表
-        albums = []
-
-        # 方法1: 找包含相册信息的容器
-        for card in soup.select(".album, .gallery-item, .photo-album, .card"):
-            name = ""
-            desc = ""
-            url = VS_URL
-
-            title_el = card.find(["h2", "h3", "h4", "a"])
-            if title_el:
-                name = title_el.get_text(strip=True)
-                if title_el.name == "a" and title_el.get("href"):
-                    href = title_el["href"]
-                    url = href if href.startswith("http") else VS_URL + href
-
-            desc_el = card.find(["p", "span"])
-            if desc_el and desc_el != title_el:
-                desc = desc_el.get_text(strip=True)
-
-            if name:
-                albums.append({"name": name, "desc": desc, "url": url, "tags": []})
-
-        # 方法2: 找图片链接
-        if not albums:
-            for a in soup.find_all("a", href=True):
-                text = a.get_text(strip=True)
-                if text and len(text) > 1 and len(text) < 20:
-                    img = a.find("img")
-                    if img or "album" in a["href"].lower() or "gallery" in a["href"].lower():
-                        href = a["href"]
-                        url = href if href.startswith("http") else VS_URL + href
-                        albums.append({"name": text, "desc": "", "url": url, "tags": []})
-
-        if albums:
-            return albums
-
-        # JS 渲染检测
-        scripts = soup.find_all("script")
-        has_spa = any("vue" in str(s).lower() or "react" in str(s).lower()
-                       or "angular" in str(s).lower() for s in scripts)
-        if has_spa:
-            print("⚠️ 视觉交大使用前端框架渲染，使用硬编码数据", file=sys.stderr)
-
-    except requests.exceptions.ConnectionError:
-        print("⚠️ 无法连接视觉交大 (可能需要校园网)", file=sys.stderr)
-    except Exception as e:
-        print(f"⚠️ 爬取视觉交大失败: {e}", file=sys.stderr)
-
-    return FALLBACK_ALBUMS
+        with urlopen(req, timeout=TIMEOUT) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except HTTPError as e:
+        raise VisualError(f"HTTP {e.code}: {url}") from e
+    except URLError as e:
+        raise VisualError(f"网络错误（需校园网/代理？）: {e.reason}") from e
 
 
-# ============================================================
-# 搜索照片
-# ============================================================
-
-def search_photos(keyword: str) -> list[dict]:
-    """搜索照片（基于硬编码标签匹配 + 在线搜索）"""
-    results = []
-    keyword_lower = keyword.lower()
-
-    # 1. 本地标签匹配
-    for album in FALLBACK_ALBUMS:
-        name_match = keyword_lower in album["name"].lower()
-        desc_match = keyword_lower in album.get("desc", "").lower()
-        tag_match = any(keyword_lower in tag for tag in album.get("tags", []))
-
-        if name_match or desc_match or tag_match:
-            results.append({
-                "album": album["name"],
-                "desc": album.get("desc", ""),
-                "url": album["url"],
-                "match": "标签" if tag_match else ("名称" if name_match else "描述"),
-            })
-
-    # 2. 尝试在线搜索
+def _post_json(url: str, form: dict) -> dict:
+    body = urlencode(form).encode("utf-8")
+    req = Request(url, data=body, headers={
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": "application/json",
+    })
     try:
-        # 尝试 API 搜索
-        search_urls = [
-            f"{VS_URL}/api/search?q={keyword}",
-            f"{VS_URL}/search?keyword={keyword}",
-        ]
-        for url in search_urls:
-            try:
-                resp = requests.get(url, headers=HEADERS, timeout=5)
-                if resp.status_code == 200:
-                    data = resp.json() if "json" in resp.headers.get("content-type", "") else None
-                    if data and isinstance(data, (list, dict)):
-                        items = data if isinstance(data, list) else data.get("data", data.get("items", []))
-                        for item in items[:10]:
-                            if isinstance(item, dict):
-                                results.append({
-                                    "album": item.get("title", item.get("name", "在线结果")),
-                                    "desc": item.get("desc", item.get("description", "")),
-                                    "url": item.get("url", VS_URL),
-                                    "match": "在线搜索",
-                                })
-                        break
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    if not results:
-        # 通用建议
-        results.append({
-            "album": f"搜索 \"{keyword}\"",
-            "desc": "未在本地匹配到结果，建议直接访问视觉交大网站搜索",
-            "url": VS_URL,
-            "match": "建议",
-        })
-
-    return results
+        with urlopen(req, timeout=TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except HTTPError as e:
+        raise VisualError(f"HTTP {e.code}: {url}") from e
+    except URLError as e:
+        raise VisualError(f"网络错误（需校园网/代理？）: {e.reason}") from e
+    except json.JSONDecodeError as e:
+        raise VisualError("响应不是合法 JSON。") from e
 
 
-# ============================================================
-# 输出
-# ============================================================
+# ===== 主题相册 =====
 
-def print_albums():
-    """打印相册列表"""
-    albums = list_albums()
-    print(f"\n📷 视觉交大 ({VS_URL})")
-    print(f"   共 {len(albums)} 个相册")
+_THEME_RE = re.compile(r'href="/jtdx/index/imagesList\?themeId=(\d+)"(.*?)</a>', re.S)
+_COUNT_RE = re.compile(r"图片数量[：:]\s*(\d+)")
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _dedupe_name(name: str) -> str:
+    """名称常整段重复两次（"南洋筑韵 南洋筑韵" / "SJTU SCENE SJTU SCENE"）。若前半==后半则取前半。"""
+    name = name.strip()
+    n = len(name)
+    if n >= 2 and n % 2 == 0:
+        half = name[: n // 2].strip()
+        if half and half == name[n // 2:].strip():
+            return half
+    return name
+
+
+def get_themes() -> list[dict]:
+    """从首页抽主题相册，按 themeId 去重（取最完整的名称与图片数）。"""
+    html = _get(HOME)
+    themes: dict[str, dict] = {}
+    for tid, inner in _THEME_RE.findall(html):
+        text = re.sub(r"\s+", " ", _TAG_RE.sub(" ", inner)).strip()
+        count_m = _COUNT_RE.search(text)
+        count = int(count_m.group(1)) if count_m else None
+        # 去掉"图片数量：N"片段，剩下的是名称（可能整段重复两次，如 "南洋筑韵 ... 南洋筑韵"）
+        name = _COUNT_RE.sub("", text).replace("图片数量", "").strip().strip("：:> ").strip()
+        name = _dedupe_name(name) or f"主题{tid}"
+        cur = themes.get(tid)
+        if cur is None:
+            themes[tid] = {"themeId": tid, "name": name, "count": count}
+        else:
+            if count is not None and cur["count"] is None:
+                cur["count"] = count
+            if len(name) > len(cur["name"]):
+                cur["name"] = name
+    return list(themes.values())
+
+
+# ===== 图片列表 =====
+
+def _image_url(rel: str) -> str:
+    """imageUrl(/resources/images\\id/..jpg) -> 绝对直链。"""
+    return f"{BASE}{rel.replace(chr(92), '/')}" if rel else ""
+
+
+def _norm_image(img: dict) -> dict:
+    return {
+        "id": img.get("id"),
+        "name": (img.get("name") or "").strip(),
+        "photographer": img.get("photoer", ""),
+        "url": _image_url(img.get("imageUrl", "")),
+        "width": img.get("imageWidth"),
+        "height": img.get("imageHeight"),
+        "downloads": img.get("downloadNum", 0),
+        "likes": img.get("goodNum", 0),
+        "keyword": img.get("keyword", ""),
+    }
+
+
+def list_images(theme_id: str, limit: int = 12) -> list[dict]:
+    """列某主题的图片。"""
+    data = _post_json(f"{IMAGES_API}?type=1&pageSize={limit}&pageNo=1",
+                      {"themeId": str(theme_id), "tagId": "", "searchContent": ""})
+    if data.get("code") != "0000":
+        raise VisualError(f"接口返回失败: {data.get('message', '未知')}")
+    return [_norm_image(i) for i in (data.get("imageList") or [])]
+
+
+def search_images(keyword: str, limit: int = 12) -> list[dict]:
+    """全站按关键词搜图（searchContent）。"""
+    data = _post_json(f"{IMAGES_API}?type=1&pageSize={limit}&pageNo=1",
+                      {"themeId": "", "tagId": "", "searchContent": keyword})
+    if data.get("code") != "0000":
+        raise VisualError(f"接口返回失败: {data.get('message', '未知')}")
+    return [_norm_image(i) for i in (data.get("imageList") or [])]
+
+
+def download_image(image_url: str, out_path: str) -> int:
+    """下载原图到本地，返回字节数。"""
+    req = Request(image_url, headers={"User-Agent": UA})
+    try:
+        with urlopen(req, timeout=TIMEOUT * 3) as resp:
+            data = resp.read()
+    except (HTTPError, URLError) as e:
+        raise VisualError(f"下载失败: {e}") from e
+    with open(out_path, "wb") as f:
+        f.write(data)
+    return len(data)
+
+
+# ===== 输出 =====
+
+def print_themes(themes: list[dict]) -> None:
+    print(f"\n🎨 视觉交大 主题相册 ({len(themes)} 个)")
     print("─" * 60)
-    for i, album in enumerate(albums, 1):
-        tags = " ".join(f"#{t}" for t in album.get("tags", []))
-        print(f"  {i:>2}. 📁 {album['name']}")
-        if album.get("desc"):
-            print(f"      {album['desc']}")
-        if tags:
-            print(f"      {tags}")
-    print(f"\n  🔗 访问: {VS_URL}")
-    print(f"  💡 提示: 部分功能可能需要 jAccount 登录")
+    for t in themes:
+        cnt = f"{t['count']} 张" if t["count"] is not None else "?"
+        print(f"  themeId={t['themeId']:<4} {t['name']:<16} {cnt}")
+    print("\n💡 看图: images <themeId> [数量]")
     print()
 
 
-def print_search(keyword: str):
-    """打印搜索结果"""
-    results = search_photos(keyword)
-    print(f"\n🔍 搜索: \"{keyword}\"")
+def print_images(heading: str, images: list[dict]) -> None:
+    print(f"\n🖼️  {heading} → {len(images)} 张")
     print("─" * 60)
-    if not results:
-        print("  未找到相关照片")
-    else:
-        for i, r in enumerate(results, 1):
-            print(f"  {i}. 📁 {r['album']} ({r['match']})")
-            if r.get("desc"):
-                print(f"     {r['desc']}")
-            print(f"     🔗 {r['url']}")
+    if not images:
+        print("  （无结果）")
+        return
+    for im in images:
+        size = f"{im['width']}×{im['height']}" if im["width"] else ""
+        print(f"  #{im['id']} {im['name']}  [{size}]  📷{im['photographer']}  ⬇️{im['downloads']}")
+        print(f"      {im['url']}")
+    print("\n💡 下载: download <imageId 对应的 url> [路径]，或直接用上面的链接")
     print()
 
 
-# ============================================================
-# CLI
-# ============================================================
+# ===== CLI =====
 
-def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 sjtu_visual.py <命令> [参数]")
-        print()
-        print("命令:")
-        print("  albums           列出所有相册")
-        print("  search <关键词>  搜索照片")
-        print()
-        print("示例:")
-        print('  python3 sjtu_visual.py search "图书馆"')
-        print('  python3 sjtu_visual.py search "航拍"')
-        print()
-        print(f"💡 直接访问: {VS_URL}")
-        sys.exit(0)
+HELP = """视觉交大 官方图库 (vs.sjtu.edu.cn)
+用法:
+  python3 sjtu_visual.py themes [--json]               主题相册列表
+  python3 sjtu_visual.py images <themeId> [n] [--json] 某主题的图片(含原图直链)
+  python3 sjtu_visual.py search <关键词> [n] [--json]   全站搜图
+  python3 sjtu_visual.py download <图片直链> [输出路径]  下载原图
 
-    cmd = sys.argv[1].lower()
-    if cmd == "albums":
-        print_albums()
-    elif cmd == "search":
-        if len(sys.argv) < 3:
-            print("❌ 请提供搜索关键词")
-            sys.exit(1)
-        print_search(sys.argv[2])
-    else:
-        print(f"❌ 未知命令: {cmd}")
-        sys.exit(1)
+示例:
+  python3 sjtu_visual.py themes
+  python3 sjtu_visual.py images 42 6        # SJTU SCENE 主题前6张
+  python3 sjtu_visual.py search 图书馆
+"""
+
+
+def _split_args(rest: list[str]) -> tuple[list[str], bool]:
+    as_json = "--json" in rest
+    return [a for a in rest if a != "--json"], as_json
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(HELP)
+        return 0
+    cmd = argv[0].lower()
+    args, as_json = _split_args(argv[1:])
+    try:
+        if cmd == "themes" or cmd == "albums":  # albums 兼容旧名
+            data = get_themes()
+            print(json.dumps(data, ensure_ascii=False, indent=2)) if as_json else print_themes(data)
+        elif cmd == "images":
+            if not args or not args[0].isdigit():
+                print("用法: images <themeId> [数量]")
+                return 1
+            n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 12
+            data = list_images(args[0], n)
+            print(json.dumps(data, ensure_ascii=False, indent=2)) if as_json else print_images(f"主题 #{args[0]}", data)
+        elif cmd == "search":
+            if not args:
+                print("用法: search <关键词> [数量]")
+                return 1
+            n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 12
+            data = search_images(args[0], n)
+            print(json.dumps(data, ensure_ascii=False, indent=2)) if as_json else print_images(f"搜索「{args[0]}」", data)
+        elif cmd == "download":
+            if not args:
+                print("用法: download <图片直链> [输出路径]")
+                return 1
+            url = args[0]
+            out = args[1] if len(args) > 1 else url.split("/")[-1]
+            n = download_image(url, out)
+            print(f"✅ 已下载 {n} 字节 → {out}")
+        elif cmd in ("help", "-h", "--help"):
+            print(HELP)
+        else:
+            print(f"❌ 未知命令: {cmd}")
+            print(HELP)
+            return 1
+    except VisualError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))

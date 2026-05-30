@@ -1,409 +1,347 @@
 #!/usr/bin/env python3
-"""SJTU 选课社区 (course.sjtu.plus) — 课程评价查询工具
+"""SJTU 选课社区 (jCourse, course.sjtu.plus) — 课程评价查询工具
 
-功能：搜索课程、查看评分、获取课程评价、对比不同老师
-认证：需要 jAccount 登录后的 session cookie（通过浏览器自动化获取）
+认证：jCourse 开放 API Key（Bearer token），不再依赖 jAccount cookie / 浏览器代理。
+配置方式（二选一）：
+  1. 在仓库根目录 config.json 设置  "jcourse_api_key": "jc_xxx"
+  2. 环境变量  export JCOURSE_API_KEY=jc_xxx
+API Key 申请：登录 course.sjtu.plus → 个人中心 → API 密钥。
 
-API 端点（逆向自前端 JS）：
-- GET /api/search/?q=关键词 — 搜索课程
-- GET /api/course/{id}/ — 课程详情（评分、学分、院系、其他老师对比）
-- GET /api/course-filter/ — 课程分类和院系列表
-- GET /api/review/?course_id={id} — 课程评价列表
-- GET /api/me/ — 当前用户信息
-- GET /api/lesson/ — 课程信息
-- GET /api/statistic/ — 统计信息
+开放 API（Bearer 认证，分页 ?page=&page_size=，响应信封 {items,total,page,page_size}）：
+- GET /api/course?q=<关键词>        搜索课程（搜索词参数为 q；name/search/keyword 不生效）
+- GET /api/course/{id}             课程详情（rating + same_code_courses 同课不同老师对比）
+- GET /api/course/{id}/review      某门课程的评价列表（total = 该课评价数）
+- GET /api/review                  全站最新评价
+- GET /api/teacher?q= / /api/teacher/{id}   教师
 """
+from __future__ import annotations
 
+import json
 import os
 import sys
-import json
-import requests
-from datetime import datetime
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 BASE_URL = "https://course.sjtu.plus"
-CONFIG_PATH = os.path.expanduser("~/.openclaw/workspace/skills/sjtu-canvas/config.json")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_PATH = os.path.join(REPO_ROOT, "config.json")
+DEFAULT_TIMEOUT = 15
+STAR_MAX = 5
+DEFAULT_REVIEW_LIMIT = 10
 
-# ===== 配置 =====
-def load_config():
+
+class CourseReviewError(Exception):
+    """选课社区 API 调用失败（认证、网络或资源问题）。"""
+
+
+# ===== 配置与请求 =====
+
+def load_api_key() -> str:
+    """读取 jCourse API Key：优先环境变量，其次 config.json。"""
+    env_key = os.environ.get("JCOURSE_API_KEY", "").strip()
+    if env_key:
+        return env_key
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            return json.load(f)
-    return {}
-
-def get_session():
-    """获取带认证的 session。
-    
-    选课社区使用 jAccount OAuth 登录，cookie 需要通过浏览器自动化获取。
-    这里尝试从 config.json 读取已保存的 cookie，
-    如果没有则提示用户通过浏览器登录。
-    """
-    config = load_config()
-    s = requests.Session()
-    s.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': BASE_URL,
-        'Accept': 'application/json',
-    })
-    
-    # 尝试从 config 读取 cookie
-    cookie_str = config.get("course_sjtu_cookie", "")
-    if cookie_str:
-        for item in cookie_str.split(";"):
-            item = item.strip()
-            if "=" in item:
-                k, v = item.split("=", 1)
-                s.cookies.set(k.strip(), v.strip(), domain="course.sjtu.plus")
-    
-    # 也尝试从 cookie 文件读取（浏览器自动化导出的）
-    cookie_file = os.path.join(os.path.dirname(CONFIG_PATH), "course_sjtu_cookies.txt")
-    if not cookie_str and os.path.exists(cookie_file):
-        try:
-            with open(cookie_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        k, v = line.split("=", 1)
-                        s.cookies.set(k.strip(), v.strip(), domain="course.sjtu.plus")
-        except Exception:
-            pass
-    
-    return s
-
-def _try_browser_fetch(url):
-    """尝试通过本地浏览器代理调 API（利用浏览器已登录的 session cookie）
-    
-    依赖 OpenClaw browser 工具在 localhost 开的 CDP 端口。
-    如果浏览器不可用或未登录，返回 None。
-    """
-    try:
-        import subprocess
-        # 用 curl 通过 CDP 获取页面列表
-        result = subprocess.run(
-            ['curl', '-s', '--connect-timeout', '2', 'http://localhost:9222/json'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode != 0:
-            return None
-        tabs = json.loads(result.stdout)
-        # 找 course.sjtu.plus 的 tab
-        target = None
-        for t in tabs:
-            if 'course.sjtu.plus' in t.get('url', ''):
-                target = t
-                break
-        if not target:
-            return None
-        # 不走 CDP websocket（太复杂），直接用浏览器已有的 cookie 文件
-        return None
-    except Exception:
-        return None
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+        key = (cfg.get("jcourse_api_key") or "").strip()
+        if key:
+            return key
+    raise CourseReviewError(
+        "未配置 jCourse API Key。\n"
+        '  方法1: 在 config.json 设置  "jcourse_api_key": "jc_..."\n'
+        "  方法2: export JCOURSE_API_KEY=jc_...\n"
+        "  申请:  登录 course.sjtu.plus → 个人中心 → API 密钥"
+    )
 
 
-def api_get(path, params=None):
-    """调用选课社区 API。
-    
-    优先使用 config.json 中的 cookie，
-    如果 cookie 无效或未配置，提示用户登录并提取 cookie。
-    """
-    s = get_session()
+def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """调用 jCourse 开放 API，返回解析后的 JSON。失败抛 CourseReviewError。"""
+    key = load_api_key()
     url = f"{BASE_URL}{path}"
+    if params:
+        url = f"{url}?{urlencode(params)}"
+    req = Request(url, headers={
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json",
+        "User-Agent": "openclaw-sjtu/course-review",
+    })
     try:
-        r = s.get(url, params=params, timeout=15)
-        if r.status_code == 403:
-            return {"error": "未登录。course.sjtu.plus 有 CDN 反爬机制，Python requests 无法直接获取 session。\n"
-                    "✅ 解决方案: 让小灰灰通过浏览器代理调 API（浏览器已登录，直接可用）\n"
-                    "💡 用法: 直接跟小灰灰说「帮我查一下传热学的课程评价」，小灰灰会自动用浏览器调 API"}
-        r.raise_for_status()
-        return r.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": f"请求失败: {e}"}
-    except json.JSONDecodeError:
-        return {"error": f"响应不是 JSON: {r.text[:200]}"}
+        with urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        if e.code in (401, 403):
+            raise CourseReviewError(
+                f"认证失败 (HTTP {e.code})：API Key 无效或已过期，"
+                "请在 course.sjtu.plus 重新生成后更新 config.json。"
+            ) from e
+        if e.code == 404:
+            raise CourseReviewError(f"资源不存在 (HTTP 404): {path}") from e
+        raise CourseReviewError(f"请求失败 (HTTP {e.code}): {path}") from e
+    except URLError as e:
+        raise CourseReviewError(f"网络错误（需校园网或代理？）: {e.reason}") from e
+    except json.JSONDecodeError as e:
+        raise CourseReviewError("响应不是合法 JSON（可能命中了反爬页面）。") from e
+
+
+# ===== 数据归一化 =====
+
+def _rating_avg_count(rating: dict[str, Any] | None) -> tuple[float | None, int]:
+    """从 rating 对象取 (平均分, 评价数)；无评价时平均分为 None。"""
+    rating = rating or {}
+    count = rating.get("count") or 0
+    avg = rating.get("avg")
+    return (avg if count else None), count
+
+
+def _course_brief(course: dict[str, Any]) -> dict[str, Any]:
+    """把一个 course 对象压成统一的精简视图。"""
+    teacher = course.get("main_teacher") or {}
+    avg, count = _rating_avg_count(course.get("rating"))
+    return {
+        "id": course.get("id"),
+        "code": course.get("code", ""),
+        "name": course.get("name", ""),
+        "teacher": teacher.get("name", ""),
+        "department": course.get("department", ""),
+        "credit": course.get("credit", 0),
+        "rating_avg": avg,
+        "rating_count": count,
+    }
+
 
 # ===== 核心功能 =====
 
-def search_courses(keyword, page_size=20):
-    """搜索课程
-    
-    Args:
-        keyword: 搜索关键词（课程名、课号、老师名）
-        page_size: 返回数量
-    
-    Returns:
-        课程列表，每项包含 id, code, name, teacher, department, rating
-    """
-    data = api_get("/api/search/", {"q": keyword, "page_size": page_size})
-    if "error" in data:
-        return data
-    
-    results = []
-    for c in data.get("results", []):
-        rating = c.get("rating", {})
-        results.append({
-            "id": c["id"],
-            "code": c.get("code", ""),
-            "name": c.get("name", ""),
-            "teacher": c.get("teacher", ""),
-            "department": c.get("department", ""),
-            "credit": c.get("credit", 0),
-            "rating_avg": rating.get("avg"),
-            "rating_count": rating.get("count", 0),
+def search_courses(keyword: str, limit: int = 20) -> dict[str, Any]:
+    """搜索课程（按课程名 / 课号 / 老师名）。"""
+    data = api_get("/api/course", {"q": keyword, "page": 1, "page_size": limit})
+    return {
+        "total": data.get("total", 0),
+        "results": [_course_brief(c) for c in data.get("items", [])],
+    }
+
+
+def get_course_detail(course_id: int) -> dict[str, Any]:
+    """课程详情：评分分布 + 同课号其他老师对比。"""
+    data = api_get(f"/api/course/{course_id}")
+    brief = _course_brief(data)
+    rating = data.get("rating") or {}
+
+    others: list[dict[str, Any]] = []
+    for c in data.get("same_code_courses") or []:
+        ob = _course_brief(c)
+        if ob["id"] != brief["id"]:
+            others.append(ob)
+    others.sort(key=lambda x: (x["rating_avg"] or 0), reverse=True)
+
+    brief.update({
+        "last_semester": data.get("last_semester", ""),
+        "score": rating.get("score"),
+        "distribution": rating.get("distribution") or [],
+        "moderator_remark": data.get("moderator_remark") or "",
+        "other_teachers": others,
+    })
+    return brief
+
+
+def get_course_reviews(course_id: int, limit: int = DEFAULT_REVIEW_LIMIT) -> dict[str, Any]:
+    """某门课程的评价列表（按课程聚合，total = 该课评价总数）。"""
+    data = api_get(f"/api/course/{course_id}/review", {"page": 1, "page_size": limit})
+    reviews = []
+    for r in data.get("items", []):
+        vote = r.get("vote") or {}
+        reviews.append({
+            "semester": r.get("semester", ""),
+            "rating": r.get("rating"),
+            "content": (r.get("content") or "").strip(),
+            "like": vote.get("like_count", 0),
+            "dislike": vote.get("dislike_count", 0),
+            "date": (r.get("created_at") or "")[:10],
         })
-    
-    return {
-        "total": data.get("count", 0),
-        "results": results,
-    }
+    return {"total": data.get("total", 0), "reviews": reviews}
 
-def get_course_detail(course_id):
-    """获取课程详情，包含评分和其他老师对比
-    
-    Args:
-        course_id: 课程 ID（从搜索结果中获取）
-    
-    Returns:
-        课程详情，包含 name, code, teacher, rating, related_teachers 等
-    """
-    data = api_get(f"/api/course/{course_id}/")
-    if "error" in data:
-        return data
-    
-    related = []
-    for t in data.get("related_teachers", []):
-        related.append({
-            "id": t.get("id"),
-            "teacher": t.get("tname", ""),
-            "rating_avg": t.get("avg"),
-            "rating_count": t.get("count", 0),
-        })
-    # 按评分降序排列
-    related.sort(key=lambda x: (x["rating_avg"] or 0), reverse=True)
-    
-    main_teacher = data.get("main_teacher", {})
-    rating = data.get("rating", {})
-    
-    return {
-        "id": data["id"],
-        "code": data.get("code", ""),
-        "name": data.get("name", ""),
-        "teacher": main_teacher.get("name", ""),
-        "department": data.get("department", ""),
-        "credit": data.get("credit", 0),
-        "rating_avg": rating.get("avg"),
-        "rating_count": rating.get("count", 0),
-        "related_teachers": related,
-        "moderator_remark": data.get("moderator_remark"),
-    }
 
-def get_course_filters():
-    """获取课程分类和院系列表，用于筛选"""
-    data = api_get("/api/course-filter/")
-    if "error" in data:
-        return data
-    
-    categories = [{"id": c["id"], "name": c["name"], "count": c["count"]} 
-                  for c in data.get("categories", [])]
-    departments = [{"id": d["id"], "name": d["name"], "count": d["count"]}
-                   for d in data.get("departments", [])]
-    
-    # 按课程数降序
-    categories.sort(key=lambda x: x["count"], reverse=True)
-    departments.sort(key=lambda x: x["count"], reverse=True)
-    
-    return {
-        "categories": categories,
-        "departments": departments,
-    }
+def compare_teachers(course_name: str, limit: int = 30) -> dict[str, Any]:
+    """搜索同名课程的不同老师并按评分排序对比。"""
+    data = search_courses(course_name, limit=limit)
+    results = data["results"]
+    exact = [c for c in results if c["name"] == course_name]
+    pool = exact or [c for c in results if course_name in c["name"]]
+    if not pool:
+        return {
+            "error": f"未找到课程: {course_name}",
+            "suggestions": [c["name"] for c in results[:5]],
+        }
 
-def compare_teachers(course_name):
-    """搜索某门课程的所有老师并对比评分
-    
-    Args:
-        course_name: 课程名称
-    
-    Returns:
-        各老师的评分对比
-    """
-    search_result = search_courses(course_name)
-    if "error" in search_result:
-        return search_result
-    
-    # 按课程名精确匹配
-    exact_matches = [c for c in search_result["results"] if c["name"] == course_name]
-    if not exact_matches:
-        # 模糊匹配
-        exact_matches = [c for c in search_result["results"] if course_name in c["name"]]
-    
-    if not exact_matches:
-        return {"error": f"未找到课程: {course_name}", "suggestions": [c["name"] for c in search_result["results"][:5]]}
-    
-    # 获取第一个匹配课程的详情（包含其他老师对比）
-    first = exact_matches[0]
-    detail = get_course_detail(first["id"])
-    if "error" in detail:
-        return detail
-    
-    # 合并当前老师和其他老师
-    all_teachers = [{
-        "teacher": detail["teacher"],
-        "rating_avg": detail["rating_avg"],
-        "rating_count": detail["rating_count"],
-        "is_current": True,
-    }]
-    
-    for t in detail.get("related_teachers", []):
-        if t["teacher"] != detail["teacher"]:
-            all_teachers.append({
-                "teacher": t["teacher"],
-                "rating_avg": t["rating_avg"],
-                "rating_count": t["rating_count"],
-                "is_current": False,
-                "course_id": t.get("id"),
-            })
-    
-    # 按评分降序
-    all_teachers.sort(key=lambda x: (x["rating_avg"] or 0), reverse=True)
-    
-    return {
-        "course": detail["name"],
-        "code": detail["code"],
-        "department": detail["department"],
-        "credit": detail["credit"],
-        "teachers": all_teachers,
-    }
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    for c in pool:
+        key = (c["teacher"], c["code"])
+        existing = seen.get(key)
+        if existing is None or (c["rating_count"] or 0) > (existing["rating_count"] or 0):
+            seen[key] = c
+    teachers = sorted(seen.values(), key=lambda x: (x["rating_avg"] or 0), reverse=True)
+    return {"course": pool[0]["name"], "teachers": teachers}
+
 
 # ===== 格式化输出 =====
 
-def print_search_results(results):
-    """格式化打印搜索结果"""
-    if "error" in results:
-        print(f"❌ {results['error']}")
-        return
-    
-    print(f"\n🔍 搜索到 {results['total']} 门课程")
-    print("─" * 60)
-    
-    for c in results["results"]:
-        rating_str = f"⭐ {c['rating_avg']:.1f} ({c['rating_count']}人)" if c['rating_avg'] else "暂无评价"
-        print(f"  [{c['code']}] {c['name']}")
-        print(f"    👨‍🏫 {c['teacher']} | 🏢 {c['department']} | 💯 {c['credit']}学分 | {rating_str}")
-        print()
+def _star_bar(avg: float | None) -> str:
+    if not avg:
+        return "暂无评价"
+    filled = int(round(avg))
+    bar = "★" * filled + "☆" * (STAR_MAX - filled)
+    return f"{bar} {avg:.2f}"
 
-def print_course_detail(detail):
-    """格式化打印课程详情"""
-    if "error" in detail:
-        print(f"❌ {detail['error']}")
-        return
-    
-    rating_str = f"⭐ {detail['rating_avg']:.1f} ({detail['rating_count']}人)" if detail['rating_avg'] else "暂无评价"
-    
-    print(f"\n📚 {detail['name']}（{detail['teacher']}）")
-    print("─" * 60)
-    print(f"  课号: {detail['code']}")
-    print(f"  学分: {detail['credit']}")
-    print(f"  院系: {detail['department']}")
-    print(f"  评分: {rating_str}")
-    
-    if detail.get("related_teachers"):
-        print(f"\n  📊 其他老师对比:")
-        for t in detail["related_teachers"]:
-            if t["rating_avg"] and t["rating_count"] > 0:
-                bar = "█" * int(t["rating_avg"]) + "░" * (5 - int(t["rating_avg"]))
-                print(f"    {t['teacher']:8s} {bar} {t['rating_avg']:.1f} ({t['rating_count']}人)")
-            else:
-                print(f"    {t['teacher']:8s} 暂无评价")
 
-def print_teacher_comparison(comparison):
-    """格式化打印老师对比"""
-    if "error" in comparison:
-        print(f"❌ {comparison['error']}")
-        if "suggestions" in comparison:
-            print(f"  💡 你是不是在找: {', '.join(comparison['suggestions'])}")
+def print_search_results(data: dict[str, Any]) -> None:
+    print(f"\n🔍 搜索到 {data['total']} 门课程（显示前 {len(data['results'])} 门）")
+    print("─" * 64)
+    for c in data["results"]:
+        rating = f"⭐ {c['rating_avg']:.2f} ({c['rating_count']}人)" if c["rating_avg"] else "暂无评价"
+        print(f"  #{c['id']} [{c['code']}] {c['name']}")
+        print(f"      👨‍🏫 {c['teacher']} | 🏢 {c['department']} | {c['credit']}学分 | {rating}")
+
+
+def print_course_detail(detail: dict[str, Any]) -> None:
+    print(f"\n📚 {detail['name']}（{detail['teacher']}）  #{detail['id']}")
+    print("─" * 64)
+    print(f"  课号: {detail['code']}   学分: {detail['credit']}   院系: {detail['department']}")
+    if detail.get("last_semester"):
+        print(f"  最近开课: {detail['last_semester']}")
+    print(f"  评分: {_star_bar(detail['rating_avg'])}  ({detail['rating_count']}人评价)")
+
+    dist = detail.get("distribution") or []
+    if any(dist):
+        print("  分布: " + "  ".join(f"{i + 1}★:{n}" for i, n in enumerate(dist)))
+    if detail.get("moderator_remark"):
+        print(f"  小黑板: {detail['moderator_remark']}")
+
+    others = detail.get("other_teachers") or []
+    if others:
+        print("\n  📊 同课号其他老师:")
+        for t in others:
+            print(f"    {t['teacher']:10s} {_star_bar(t['rating_avg'])} ({t['rating_count']}人)  #{t['id']}")
+
+
+def print_reviews(course_id: int, data: dict[str, Any]) -> None:
+    print(f"\n💬 课程 #{course_id} 的评价（共 {data['total']} 条，显示 {len(data['reviews'])} 条）")
+    print("─" * 64)
+    for r in data["reviews"]:
+        stars = "★" * (r["rating"] or 0) + "☆" * (STAR_MAX - (r["rating"] or 0))
+        meta = f"{stars}  {r['semester']}  👍{r['like']} 👎{r['dislike']}  {r['date']}"
+        print(f"\n  {meta}")
+        for line in r["content"].splitlines():
+            print(f"    {line}")
+
+
+def print_teacher_comparison(data: dict[str, Any]) -> None:
+    if "error" in data:
+        print(f"❌ {data['error']}")
+        if data.get("suggestions"):
+            print(f"  💡 你是不是在找: {', '.join(data['suggestions'])}")
         return
-    
-    print(f"\n📊 {comparison['course']}（{comparison['code']}）老师评分对比")
-    print(f"  {comparison['department']} | {comparison['credit']}学分")
-    print("─" * 60)
-    
-    for i, t in enumerate(comparison["teachers"], 1):
-        name = t["teacher"]
-        if t.get("is_current"):
-            name += " ← 你的老师"
-        
-        if t["rating_avg"] and t["rating_count"] > 0:
-            bar = "█" * int(t["rating_avg"]) + "░" * (5 - int(t["rating_avg"]))
-            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "  "
-            print(f"  {emoji} {name:15s} {bar} {t['rating_avg']:.1f}/5 ({t['rating_count']}人评价)")
-        else:
-            print(f"     {name:15s} 暂无评价")
+    print(f"\n📊 「{data['course']}」不同老师评分对比")
+    print("─" * 64)
+    medals = ["🥇", "🥈", "🥉"]
+    for i, t in enumerate(data["teachers"]):
+        medal = medals[i] if i < len(medals) and t["rating_avg"] else "  "
+        print(f"  {medal} {t['teacher']:10s} {_star_bar(t['rating_avg'])} "
+              f"({t['rating_count']}人) [{t['code']}] #{t['id']}")
+
+
+# ===== 自检 =====
+
+def _mask(key: str) -> str:
+    return f"{key[:8]}…{key[-4:]}" if len(key) > 12 else "***"
+
+
+def selftest() -> int:
+    """探活：验证 API Key 与各端点可用。"""
+    try:
+        key = load_api_key()
+    except CourseReviewError as e:
+        print(f"❌ {e}")
+        return 1
+    print(f"🔑 API Key: {_mask(key)}")
+    checks = [
+        ("搜索  /api/course?q=", lambda: search_courses("传热学", limit=3)["total"]),
+        ("详情  /api/course/{id}", lambda: get_course_detail(6807)["name"]),
+        ("评价  /api/course/{id}/review", lambda: get_course_reviews(6807, limit=1)["total"]),
+    ]
+    ok = True
+    for label, fn in checks:
+        try:
+            print(f"  ✅ {label} -> {fn()}")
+        except CourseReviewError as e:
+            ok = False
+            print(f"  ❌ {label} -> {e}")
+    return 0 if ok else 1
+
 
 # ===== CLI =====
 
-def print_help():
-    print("""
-📖 SJTU 选课社区查询工具
-────────────────────────────────────
-用法:
-  python3 sjtu_course_review.py search <关键词>     搜索课程
-  python3 sjtu_course_review.py detail <课程ID>     查看课程详情
-  python3 sjtu_course_review.py compare <课程名>    对比不同老师评分
-  python3 sjtu_course_review.py filters             查看课程分类和院系
-  python3 sjtu_course_review.py help                显示帮助
+HELP = """
+📖 SJTU 选课社区 (jCourse) 课程评价查询
+────────────────────────────────────────────
+  search  <关键词>          搜索课程（名称/课号/老师）
+  detail  <课程ID>          课程详情 + 同课号老师对比
+  reviews <课程ID> [条数]   查看某门课程的评价
+  compare <课程名>          同名课程不同老师评分对比
+  selftest                  检查 API Key 与连通性
+  help                      显示帮助
 
 示例:
-  python3 sjtu_course_review.py search 燃烧学
-  python3 sjtu_course_review.py detail 7052
+  python3 sjtu_course_review.py search 传热学
+  python3 sjtu_course_review.py detail 6807
+  python3 sjtu_course_review.py reviews 6807 5
   python3 sjtu_course_review.py compare 传热学
-  
-⚠️  需要先通过浏览器登录 course.sjtu.plus（jAccount 认证）
-""")
+
+认证: 在 config.json 设置 "jcourse_api_key"，或环境变量 JCOURSE_API_KEY。
+"""
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(HELP)
+        return 0
+    cmd = argv[0]
+    try:
+        if cmd == "help":
+            print(HELP)
+        elif cmd == "selftest":
+            return selftest()
+        elif cmd == "search":
+            if len(argv) < 2:
+                print("用法: search <关键词>")
+                return 1
+            print_search_results(search_courses(" ".join(argv[1:])))
+        elif cmd == "detail":
+            if len(argv) < 2 or not argv[1].isdigit():
+                print("用法: detail <课程ID>")
+                return 1
+            print_course_detail(get_course_detail(int(argv[1])))
+        elif cmd == "reviews":
+            if len(argv) < 2 or not argv[1].isdigit():
+                print("用法: reviews <课程ID> [条数]")
+                return 1
+            limit = int(argv[2]) if len(argv) > 2 and argv[2].isdigit() else DEFAULT_REVIEW_LIMIT
+            print_reviews(int(argv[1]), get_course_reviews(int(argv[1]), limit))
+        elif cmd == "compare":
+            if len(argv) < 2:
+                print("用法: compare <课程名>")
+                return 1
+            print_teacher_comparison(compare_teachers(" ".join(argv[1:])))
+        else:
+            print(f"未知命令: {cmd}")
+            print(HELP)
+            return 1
+    except CourseReviewError as e:
+        print(f"❌ {e}")
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print_help()
-        sys.exit(0)
-    
-    cmd = sys.argv[1]
-    
-    if cmd == "help":
-        print_help()
-    
-    elif cmd == "search":
-        if len(sys.argv) < 3:
-            print("用法: python3 sjtu_course_review.py search <关键词>")
-            sys.exit(1)
-        keyword = " ".join(sys.argv[2:])
-        results = search_courses(keyword)
-        print_search_results(results)
-    
-    elif cmd == "detail":
-        if len(sys.argv) < 3:
-            print("用法: python3 sjtu_course_review.py detail <课程ID>")
-            sys.exit(1)
-        course_id = int(sys.argv[2])
-        detail = get_course_detail(course_id)
-        print_course_detail(detail)
-    
-    elif cmd == "compare":
-        if len(sys.argv) < 3:
-            print("用法: python3 sjtu_course_review.py compare <课程名>")
-            sys.exit(1)
-        course_name = " ".join(sys.argv[2:])
-        comparison = compare_teachers(course_name)
-        print_teacher_comparison(comparison)
-    
-    elif cmd == "filters":
-        filters = get_course_filters()
-        if "error" in filters:
-            print(f"❌ {filters['error']}")
-        else:
-            print("\n📁 课程分类:")
-            for c in filters["categories"]:
-                print(f"  {c['name']:15s} ({c['count']}门)")
-            print(f"\n🏢 开课院系 (前20):")
-            for d in filters["departments"][:20]:
-                print(f"  {d['name']:20s} ({d['count']}门)")
-    
-    else:
-        print(f"未知命令: {cmd}")
-        print_help()
+    sys.exit(main(sys.argv[1:]))

@@ -1,341 +1,187 @@
 #!/usr/bin/env python3
-"""
-上海交通大学生存手册搜索工具
-目标: https://survivesjtu.gitbook.io/survivesjtumanual/
-功能: 目录浏览、章节内容获取、关键词搜索
-"""
+"""上海交通大学生存手册 (SurviveSJTUManual) 查询工具
 
-import sys
+目标: https://survivesjtu.gitbook.io/survivesjtumanual (GitBook，公开无需登录)
+
+目录来自 GitBook 官方 sitemap-pages.xml（真实 URL，不再硬编码——旧版硬编码 slug 已与站点
+不符，导致 read/search 拼出 404）。命令:
+  toc [关键词]          列目录（可选按关键词过滤）
+  read <章节路径或关键词> 读某章正文
+  search <关键词>        在目录标题中搜索（命中后可 read 看正文）
+"""
+from __future__ import annotations
+
 import re
-from typing import Optional
-from urllib.parse import quote
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-import requests
-from bs4 import BeautifulSoup
+TIMEOUT = 12
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-# ============================================================
-# 常量
-# ============================================================
-
-TIMEOUT = 10
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
-BASE_URL = "https://survivesjtu.gitbook.io/survivesjtumanual"
-
-# 硬编码目录结构 (基于生存手册实际内容)
-TOC = {
-    "前言": {
-        "url": f"{BASE_URL}",
-        "children": {}
-    },
-    "立志篇": {
-        "url": f"{BASE_URL}/li-zhi-pian",
-        "children": {
-            "欢迎来到上海交通大学": f"{BASE_URL}/li-zhi-pian/huan-ying-lai-dao-shang-hai-jiao-tong-da-xue",
-            "关于失败": f"{BASE_URL}/li-zhi-pian/guan-yu-shi-bai",
-            "你想要什么": f"{BASE_URL}/li-zhi-pian/ni-xiang-yao-shi-mo",
-        }
-    },
-    "生存技巧": {
-        "url": f"{BASE_URL}/sheng-cun-ji-qiao",
-        "children": {
-            "选课": f"{BASE_URL}/sheng-cun-ji-qiao/xuan-ke",
-            "旁听": f"{BASE_URL}/sheng-cun-ji-qiao/pang-ting",
-            "GPA": f"{BASE_URL}/sheng-cun-ji-qiao/gpa",
-            "社团": f"{BASE_URL}/sheng-cun-ji-qiao/she-tuan",
-            "竞赛": f"{BASE_URL}/sheng-cun-ji-qiao/jing-sai",
-        }
-    },
-    "升学与就业": {
-        "url": f"{BASE_URL}/sheng-xue-yu-jiu-ye",
-        "children": {
-            "保研": f"{BASE_URL}/sheng-xue-yu-jiu-ye/bao-yan",
-            "考研": f"{BASE_URL}/sheng-xue-yu-jiu-ye/kao-yan",
-            "出国": f"{BASE_URL}/sheng-xue-yu-jiu-ye/chu-guo",
-            "就业": f"{BASE_URL}/sheng-xue-yu-jiu-ye/jiu-ye",
-            "考公": f"{BASE_URL}/sheng-xue-yu-jiu-ye/kao-gong",
-        }
-    },
-    "学术篇": {
-        "url": f"{BASE_URL}/xue-shu-pian",
-        "children": {
-            "科研入门": f"{BASE_URL}/xue-shu-pian/ke-yan-ru-men",
-            "转专业": f"{BASE_URL}/xue-shu-pian/zhuan-zhuan-ye",
-            "读研": f"{BASE_URL}/xue-shu-pian/du-yan",
-        }
-    },
-    "生活篇": {
-        "url": f"{BASE_URL}/sheng-huo-pian",
-        "children": {
-            "心理健康": f"{BASE_URL}/sheng-huo-pian/xin-li-jian-kang",
-            "恋爱": f"{BASE_URL}/sheng-huo-pian/lian-ai",
-            "租房": f"{BASE_URL}/sheng-huo-pian/zu-fang",
-        }
-    },
-    "写在最后": {
-        "url": f"{BASE_URL}/xie-zai-zui-hou",
-        "children": {}
-    },
-}
+SITE = "https://survivesjtu.gitbook.io"
+SITEMAP = f"{SITE}/sitemap-pages.xml"
+BASE = f"{SITE}/survivesjtumanual"
 
 
-# ============================================================
-# 目录
-# ============================================================
+class SurviveError(Exception):
+    """抓取失败。"""
 
-def get_toc() -> dict:
-    """获取生存手册目录结构 (优先爬取，降级硬编码)"""
+
+def _fetch(url: str) -> str:
+    req = Request(url, headers={"User-Agent": UA})
     try:
-        resp = requests.get(BASE_URL, headers=HEADERS, timeout=TIMEOUT)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # gitbook 侧边栏目录
-        nav = soup.find("nav") or soup.find("aside")
-        if nav:
-            links = nav.find_all("a", href=True)
-            if len(links) > 3:
-                toc_live = {}
-                for a in links:
-                    text = a.get_text(strip=True)
-                    href = a["href"]
-                    if text and len(text) > 1:
-                        if not href.startswith("http"):
-                            href = BASE_URL.rstrip("/") + "/" + href.lstrip("/")
-                        toc_live[text] = href
-                if toc_live:
-                    return {"source": "live", "items": toc_live}
-    except Exception:
-        pass
-
-    return {"source": "hardcoded", "items": TOC}
+        with urlopen(req, timeout=TIMEOUT) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except HTTPError as e:
+        raise SurviveError(f"HTTP {e.code}: {url}") from e
+    except URLError as e:
+        raise SurviveError(f"网络错误（gitbook 可能需代理）: {e.reason}") from e
 
 
-# ============================================================
-# 章节内容
-# ============================================================
+# ===== 目录（来自 sitemap）=====
 
-def get_section(section_name: str) -> Optional[str]:
-    """获取某个章节的内容"""
-    # 在硬编码目录中查找 URL
-    url = _find_section_url(section_name)
-    if not url:
-        return f"❌ 未找到章节: {section_name}\n💡 运行 python3 sjtu_survive.py toc 查看目录"
-
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # gitbook 页面内容区域
-        content_area = (
-            soup.find("main") or
-            soup.find("article") or
-            soup.find("div", class_=re.compile(r"content|page|body", re.I))
-        )
-
-        if content_area:
-            # 清理多余元素
-            for tag in content_area.find_all(["nav", "aside", "header", "footer", "script", "style"]):
-                tag.decompose()
-            text = content_area.get_text("\n", strip=True)
-            # 清理多余空行
-            text = re.sub(r'\n{3,}', '\n\n', text)
-            return text[:5000]  # 限制长度
-
-        # 降级: 返回纯文本
-        text = soup.get_text("\n", strip=True)
-        return text[:3000]
-
-    except Exception as e:
-        return f"⚠️ 获取章节内容失败: {e}\n🔗 请直接访问: {url}"
+def _slug_to_title(url: str) -> str:
+    """把 .../sheng-cun-ji-qiao/jiao-da-zhuan-zhuan-ye-zhi-nan 末段转成可读标题。"""
+    slug = url.rstrip("/").split("/")[-1]
+    # GitBook 的拼音 slug 无法可靠还原中文，原样展示末段（去 TODO 占位噪声）
+    return slug.replace("-", " ")
 
 
-def _find_section_url(name: str) -> Optional[str]:
-    """在目录中查找章节 URL"""
-    name_lower = name.lower()
-    for chapter, info in TOC.items():
-        if name_lower in chapter.lower():
-            return info["url"]
-        children = info.get("children", {})
-        for child_name, child_url in children.items():
-            if name_lower in child_name.lower():
-                return child_url
-    return None
+def get_pages() -> list[dict]:
+    """从 sitemap 拉全部页面 URL（含层级路径）。"""
+    xml = _fetch(SITEMAP)
+    locs = re.findall(r"<loc>([^<]+)</loc>", xml)
+    pages = []
+    seen = set()
+    for url in locs:
+        if not url.startswith(BASE) or url in seen:
+            continue
+        seen.add(url)
+        # 用 BASE 之后的路径做层级展示
+        rel = url[len(BASE):].strip("/")
+        if not rel:
+            continue
+        pages.append({"url": url, "path": rel, "title": _slug_to_title(url), "depth": rel.count("/")})
+    return pages
 
 
-# ============================================================
-# 搜索
-# ============================================================
-
-def search_handbook(keyword: str) -> list[dict]:
-    """搜索生存手册内容"""
-    results = []
-    keyword_lower = keyword.lower()
-
-    # 1. 在硬编码目录中搜索标题
-    for chapter, info in TOC.items():
-        if keyword_lower in chapter.lower():
-            results.append({
-                "title": chapter,
-                "url": info["url"],
-                "type": "章节",
-                "match": "标题匹配",
-            })
-        children = info.get("children", {})
-        for child_name, child_url in children.items():
-            if keyword_lower in child_name.lower():
-                results.append({
-                    "title": f"{chapter} > {child_name}",
-                    "url": child_url,
-                    "type": "子章节",
-                    "match": "标题匹配",
-                })
-
-    # 2. 尝试在每个章节页面内容中搜索（带总超时保护）
-    if len(results) < 3:
-        import time
-        search_start = time.time()
-        MAX_SEARCH_TIME = 15  # 最多花15秒搜索页面内容
-
-        for chapter, info in TOC.items():
-            if time.time() - search_start > MAX_SEARCH_TIME:
-                break
-            children = info.get("children", {})
-            urls_to_check = [(chapter, info["url"])]
-            urls_to_check += [(f"{chapter} > {k}", v) for k, v in children.items()]
-
-            for title, url in urls_to_check:
-                if time.time() - search_start > MAX_SEARCH_TIME:
-                    break
-                if any(r["url"] == url for r in results):
-                    continue
-                try:
-                    resp = requests.get(url, headers=HEADERS, timeout=5)
-                    if resp.status_code == 200 and keyword_lower in resp.text.lower():
-                        # 提取匹配上下文
-                        text = BeautifulSoup(resp.text, "html.parser").get_text()
-                        idx = text.lower().find(keyword_lower)
-                        if idx >= 0:
-                            start = max(0, idx - 30)
-                            end = min(len(text), idx + len(keyword) + 50)
-                            snippet = text[start:end].replace("\n", " ").strip()
-                            results.append({
-                                "title": title,
-                                "url": url,
-                                "type": "内容",
-                                "match": f"...{snippet}...",
-                            })
-                except Exception:
-                    continue
-
-                if len(results) >= 10:
-                    break
-            if len(results) >= 10:
-                break
-
-        if not results:
-            # gitbook 可能被墙或加载慢，给一个提示
-            results.append({
-                "title": f"在线搜索 \"{keyword}\"",
-                "url": f"{BASE_URL}",
-                "type": "提示",
-                "match": "未在本地章节中找到匹配，建议直接访问网站搜索",
-            })
-
-    return results
+def search_pages(keyword: str) -> list[dict]:
+    """在页面路径/末段里匹配关键词（拼音或 slug 片段）。"""
+    kw = keyword.lower()
+    return [p for p in get_pages() if kw in p["path"].lower()]
 
 
-# ============================================================
-# 输出
-# ============================================================
+# ===== 正文 =====
 
-def print_toc():
-    """打印目录"""
-    toc = get_toc()
-    print(f"\n📖 上海交通大学生存手册")
-    print(f"   {BASE_URL}")
-    print(f"   数据来源: {'在线' if toc['source'] == 'live' else '硬编码'}")
-    print("─" * 60)
+def _strip_tags(html: str) -> str:
+    """从 GitBook 页面粗提正文：去 script/style/nav，转纯文本。"""
+    html = re.sub(r"<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
-    if toc["source"] == "live":
-        for name, url in toc["items"].items():
-            print(f"  • {name}")
-            print(f"    🔗 {url}")
+
+def read_page(target: str, max_chars: int = 5000) -> tuple[str, str]:
+    """读某页正文。target 可以是完整 URL、路径片段或关键词。返回 (url, 正文)。"""
+    if target.startswith("http"):
+        url = target
     else:
-        for chapter, info in toc["items"].items():
-            print(f"\n  📂 {chapter}")
-            print(f"     🔗 {info['url']}")
-            children = info.get("children", {})
-            for child_name, child_url in children.items():
-                print(f"     ├─ {child_name}")
+        matches = search_pages(target)
+        if not matches:
+            raise SurviveError(f"未找到匹配「{target}」的章节，先用 toc/search 查路径。")
+        url = matches[0]["url"]
+    text = _strip_tags(_fetch(url))
+    return url, text[:max_chars]
+
+
+# ===== 输出 =====
+
+def print_toc(keyword: str | None = None) -> None:
+    pages = get_pages()
+    if keyword:
+        kw = keyword.lower()
+        pages = [p for p in pages if kw in p["path"].lower()]
+    print(f"\n📖 上海交通大学生存手册  ({len(pages)} 页)")
+    print(f"   {BASE}")
+    print("─" * 64)
+    for p in pages:
+        indent = "  " + "  " * min(p["depth"], 4)
+        print(f"{indent}• {p['path']}")
+    print(f"\n💡 read <路径片段>  读正文，如: read zhuan-zhuan-ye")
     print()
 
 
-def print_search(keyword: str):
-    """打印搜索结果"""
-    results = search_handbook(keyword)
-    print(f"\n🔍 搜索: \"{keyword}\"")
-    print("─" * 60)
+def print_search(keyword: str) -> None:
+    results = search_pages(keyword)
+    print(f"\n🔍 搜索「{keyword}」→ {len(results)} 个章节")
+    print("─" * 64)
     if not results:
-        print(f"  未找到与 \"{keyword}\" 相关的内容")
-        print(f"  💡 建议直接访问: {BASE_URL}")
-    else:
-        for i, r in enumerate(results, 1):
-            print(f"  {i}. [{r['type']}] {r['title']}")
-            if r.get("match") and r["match"] != "标题匹配":
-                print(f"     📝 {r['match']}")
-            print(f"     🔗 {r['url']}")
+        print(f"  无匹配。在线全文搜索: {BASE}")
+    for r in results:
+        print(f"  • {r['path']}")
+        print(f"    🔗 {r['url']}")
     print()
 
 
-def print_section(name: str):
-    """打印章节内容"""
-    print(f"\n📖 章节: {name}")
-    print("─" * 60)
-    content = get_section(name)
-    print(content)
+def print_read(target: str) -> None:
+    url, text = read_page(target)
+    print(f"\n📖 {url}")
+    print("─" * 64)
+    print(text if text else "（正文为空或解析失败，请直接访问上方链接）")
     print()
 
 
-# ============================================================
-# CLI
-# ============================================================
+# ===== CLI =====
 
-def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 sjtu_survive.py <命令> [参数]")
-        print()
-        print("命令:")
-        print("  toc              查看目录结构")
-        print("  search <关键词>  搜索手册内容")
-        print("  read <章节名>    阅读章节内容")
-        print()
-        print("示例:")
-        print('  python3 sjtu_survive.py search "转专业"')
-        print('  python3 sjtu_survive.py read "保研"')
-        sys.exit(0)
+HELP = """上海交通大学生存手册
+用法:
+  python3 sjtu_survive.py toc [关键词]       列目录(可过滤)
+  python3 sjtu_survive.py search <关键词>    搜章节
+  python3 sjtu_survive.py read <路径片段>    读正文
 
-    cmd = sys.argv[1].lower()
-    if cmd == "toc":
-        print_toc()
-    elif cmd == "search":
-        if len(sys.argv) < 3:
-            print("❌ 请提供搜索关键词")
-            sys.exit(1)
-        print_search(sys.argv[2])
-    elif cmd == "read":
-        if len(sys.argv) < 3:
-            print("❌ 请提供章节名")
-            sys.exit(1)
-        print_section(sys.argv[2])
-    else:
-        print(f"❌ 未知命令: {cmd}")
-        sys.exit(1)
+示例:
+  python3 sjtu_survive.py search zhuan-zhuan-ye
+  python3 sjtu_survive.py read bao-yan
+注: GitBook slug 为拼音，搜索用拼音片段(如 gpa/bao-yan/xuan-ke)更准。
+"""
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(HELP)
+        return 0
+    cmd = argv[0].lower()
+    try:
+        if cmd == "toc":
+            print_toc(argv[1] if len(argv) > 1 else None)
+        elif cmd == "search":
+            if len(argv) < 2:
+                print("用法: search <关键词>")
+                return 1
+            print_search(argv[1])
+        elif cmd == "read":
+            if len(argv) < 2:
+                print("用法: read <路径片段>")
+                return 1
+            print_read(argv[1])
+        elif cmd in ("help", "-h", "--help"):
+            print(HELP)
+        else:
+            print(f"❌ 未知命令: {cmd}")
+            print(HELP)
+            return 1
+    except SurviveError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))

@@ -40,8 +40,8 @@ SITES = {
     },
     "legacy": {
         "name": "传承·交大 (share.dyweb.sjtu.cn)",
-        "url": "https://share.dyweb.sjtu.cn/",
-        "success_marker": "share.dyweb.sjtu.cn",
+        "url": "https://beta.share.dyweb.sjtu.cn/",
+        "success_marker": "beta.share.dyweb.sjtu.cn",
         "verify_path": "/api/v1/user/profile",
         "cookie_file": CRED_DIR / "share-dyweb-sjtu-cn.json",
     },
@@ -89,11 +89,22 @@ def grab_one(playwright, site_key: str) -> bool:
 
         # Dump cookies
         cookies = ctx.cookies()
+        token = ""
+        if site_key == "legacy":
+            try:
+                token = page.evaluate("() => localStorage.getItem('token') || ''") or ""
+            except Exception:  # noqa: BLE001
+                token = ""
+            if token:
+                print(f"  🔑 已抓到 token ({len(token)} chars)")
+            else:
+                print("  ⚠ 未抓到 token, 可能没真正登录, 或站点改了存储 key")
         payload: dict[str, Any] = {
             "site": cfg["url"],
             "saved_at_iso": _now_iso(),
             "verify_path": cfg["verify_path"],
             "cookies": cookies,
+            "token": token,
             "user_agent": page.evaluate("navigator.userAgent"),
         }
         cfg["cookie_file"].write_text(
