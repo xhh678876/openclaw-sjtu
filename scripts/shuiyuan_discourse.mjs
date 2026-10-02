@@ -2419,7 +2419,20 @@ async function main() {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// 判断是否被直接执行时先做 realpath 归一化：经符号链接或 Windows 目录联接调用时，
+// Node 会把 import.meta.url 规范成真实路径，而 process.argv[1] 保留链接路径，
+// 直接比较会不相等 —— main() 于是完全不执行，进程静默退出 0 且没有任何输出。
+// 这里把 argv[1] 转成 file URL 再比（本文件只导入了 pathToFileURL）。
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href;
+  }
+}
+
+if (invokedDirectly()) {
   main()
     .then((code) => {
       if (typeof code === "number") {
