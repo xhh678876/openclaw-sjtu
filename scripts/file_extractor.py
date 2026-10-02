@@ -60,8 +60,8 @@ def extract_file(file_path):
         ".ppt": extract_pptx,
         ".pdf": extract_pdf,
         ".docx": extract_docx,
-        ".txt": lambda f: open(f).read(),
-        ".md": lambda f: open(f).read(),
+        ".txt": lambda f: open(f, encoding="utf-8").read(),
+        ".md": lambda f: open(f, encoding="utf-8").read(),
     }
     extractor = extractors.get(ext)
     if not extractor:

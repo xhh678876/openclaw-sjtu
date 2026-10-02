@@ -37,10 +37,10 @@ def banner():
 def load_existing():
     """加载已有配置"""
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
             return json.load(f)
     if os.path.exists(EXAMPLE_PATH):
-        with open(EXAMPLE_PATH) as f:
+        with open(EXAMPLE_PATH, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -215,7 +215,7 @@ def main():
         print(f"\n  {YELLOW}已取消，配置未保存{RESET}")
         return
 
-    with open(CONFIG_PATH, "w") as f:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
     print(f"\n  {GREEN}{BOLD}✅ 配置完成！{RESET}")

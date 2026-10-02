@@ -15,11 +15,14 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_DIR = path.join(process.env.HOME, '.openclaw/skills-data/sjtu-date');
+// os.homedir() rather than process.env.HOME: HOME is unset on Windows, where
+// path.join(undefined, ...) throws before the CLI can even print its usage.
+const CONFIG_DIR = path.join(os.homedir(), '.openclaw', 'skills-data', 'sjtu-date');
 const TOKEN_FILE = path.join(CONFIG_DIR, 'token.json');
 const BASE_URL = 'https://sjtudate.com/api';
 

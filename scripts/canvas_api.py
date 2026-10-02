@@ -21,7 +21,7 @@ PROFILE_ENV_VAR = "OPENCLAW_SJTU_CANVAS_PROFILE"
 def load_config():
     for path in CONFIG_PATHS:
         if os.path.exists(path):
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
     return {}
 
