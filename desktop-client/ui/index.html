@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>交大助手</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎓</span>
+      <div>
+        <div class="title">交大助手</div>
+        <div class="subtitle">openclaw-sjtu</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div id="gw" class="gw gw-unknown" title="OpenClaw Gateway 状态">
+        <span class="dot"></span><span id="gwText">检测中…</span>
+      </div>
+      <button class="ghost" id="openSkill">技能目录</button>
+      <button class="ghost" id="openCourseware">课件目录</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="loading">加载功能列表…</div>
+    </aside>
+
+    <section class="panel">
+      <div class="panel-head">
+        <span id="panelTitle">输出</span>
+        <div class="panel-head-right">
+          <span id="busy" class="busy hidden"><span class="spinner"></span>运行中</span>
+          <button class="ghost small" id="cancelBtn" disabled>中断</button>
+          <button class="ghost small" id="clearBtn">清空</button>
+        </div>
+      </div>
+
+      <div class="output" id="output">
+        <div class="hint">
+          <p>左侧点按钮查作业、食堂、图书馆等，<b>即时返回、不消耗 token</b>。</p>
+          <p>下方输入框问 AI，走 OpenClaw agent，<b>需要校园网</b>。</p>
+        </div>
+      </div>
+
+      <form class="askbar" id="askForm">
+        <input id="askInput" type="text" autocomplete="off"
+               placeholder="问我任何事，例如：我有什么作业没交？今天吃什么？">
+        <button type="submit" id="askBtn">问 AI</button>
+      </form>
+    </section>
+  </main>
+
+  <div class="modal hidden" id="modal">
+    <div class="modal-box">
+      <div class="modal-label" id="modalLabel">参数</div>
+      <div class="modal-path hidden" id="modalPath"></div>
+      <input id="modalInput" type="text" autocomplete="off">
+      <div class="modal-actions">
+        <button class="ghost" id="modalCancel">取消</button>
+        <button id="modalOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
