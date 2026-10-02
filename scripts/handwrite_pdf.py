@@ -25,12 +25,29 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from handright import Template, handwrite
 
-# 字体路径（优先级: 自定义手写体 > 楷体 > 宋体）
-FONT_CANDIDATES = [
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _repo_fonts():
+    """仓库自带 fonts/ 下的字体。
+
+    原候选列表只找了旧布局 `~/.openclaw/workspace/skills/sjtu-canvas/fonts/` 和两个
+    macOS 系统字体路径，完全没用到仓库自己发布的 fonts/，于是除旧布局用户外都会
+    在 find_font() 抛 FileNotFoundError。仓库里有几个文件是占位符（十几字节），
+    find_font() 会因加载失败自动跳过。
+    """
+    fonts_dir = _SKILL_ROOT / "fonts"
+    return sorted(str(p) for p in fonts_dir.glob("*.ttf")) if fonts_dir.is_dir() else []
+
+
+# 字体路径（优先级: 仓库自带手写体 > 旧布局手写体 > 系统字体）
+FONT_CANDIDATES = _repo_fonts() + [
     os.path.expanduser("~/.openclaw/workspace/skills/sjtu-canvas/fonts/MaokenYingBiKaiShu.ttf"),  # 猫啃硬笔楷书（最逼真）
     os.path.expanduser("~/.openclaw/workspace/skills/sjtu-canvas/fonts/ZCOOLKuaiLe-Regular.ttf"),  # 站酷快乐体（备选）
     "/System/Library/Fonts/Supplemental/Songti.ttc",
     "/System/Library/Fonts/STHeiti Medium.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\msyh.ttc",
 ]
 
 def find_font():
